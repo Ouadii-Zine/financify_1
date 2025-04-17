@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Upload, FileText, AlertTriangle, CheckCircle2, Download } from 'lucide-react';
+import { Upload, FileText, AlertTriangle, CheckCircle2, Download, Info } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Table, 
@@ -13,6 +13,8 @@ import {
   TableRow 
 } from '@/components/ui/table';
 import { toast } from '@/hooks/use-toast';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { downloadExcelTemplate, generateTemplateDocumentation } from '@/services/ExcelTemplateService';
 
 const Import = () => {
   const [fileSelected, setFileSelected] = useState<File | null>(null);
@@ -20,6 +22,11 @@ const Import = () => {
   const [previewData, setPreviewData] = useState<any[]>([]);
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importSuccess, setImportSuccess] = useState(false);
+  const [templateDocs, setTemplateDocs] = useState<Record<string, string>>({
+    prets: generateTemplateDocumentation('prets'),
+    cashflows: generateTemplateDocumentation('cashflows'),
+    parametres: generateTemplateDocumentation('parametres')
+  });
   
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -82,7 +89,7 @@ const Import = () => {
         toast({
           title: "Import réussi",
           description: `${previewData.length} prêts ont été importés avec succès.`,
-          variant: "default" // Modifié de "success" à "default"
+          variant: "default"
         });
       } else {
         setImportSuccess(false);
@@ -100,23 +107,21 @@ const Import = () => {
 
   // Fonction pour télécharger les gabarits Excel
   const handleDownloadTemplate = (templateType: string) => {
-    // Dans une application réelle, ces URL pointeraient vers des fichiers hébergés sur un serveur
-    // Pour cette démo, nous simulons le téléchargement
-    const fakeTemplateUrl = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,UEsDBBQABgAIAAAAIQD21qXvAgEAABQCAAATA`;
+    const result = downloadExcelTemplate(templateType);
     
-    // Créer un lien temporaire et déclencher le téléchargement
-    const a = document.createElement('a');
-    a.href = fakeTemplateUrl;
-    a.download = `gabarit_${templateType}.xlsx`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    
-    toast({
-      title: "Téléchargement initié",
-      description: `Le gabarit ${templateType} va être téléchargé.`,
-      variant: "default"
-    });
+    if (result.success) {
+      toast({
+        title: "Téléchargement initié",
+        description: result.message,
+        variant: "default"
+      });
+    } else {
+      toast({
+        title: "Erreur de téléchargement",
+        description: result.message,
+        variant: "destructive"
+      });
+    }
   };
   
   return (
@@ -276,59 +281,115 @@ const Import = () => {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Card className="p-4 flex items-start gap-3">
-                  <FileText className="h-8 w-8 text-blue-500" />
-                  <div>
-                    <h3 className="font-medium">Gabarit Excel pour Prêts</h3>
-                    <p className="text-sm text-muted-foreground mb-2">
-                      Modèle pour importer des prêts avec tous les champs requis.
-                    </p>
-                    <Button size="sm" variant="outline" onClick={() => handleDownloadTemplate('prets')}>
-                      <Download className="h-4 w-4 mr-2" />
-                      Télécharger
-                    </Button>
+                <Card className="p-4 flex flex-col gap-3">
+                  <div className="flex items-start gap-3">
+                    <FileText className="h-8 w-8 text-blue-500 shrink-0" />
+                    <div>
+                      <h3 className="font-medium">Gabarit Excel pour Prêts</h3>
+                      <p className="text-sm text-muted-foreground mb-2">
+                        Modèle pour importer des prêts avec tous les champs requis.
+                      </p>
+                      <Button size="sm" variant="outline" onClick={() => handleDownloadTemplate('prets')}>
+                        <Download className="h-4 w-4 mr-2" />
+                        Télécharger
+                      </Button>
+                    </div>
                   </div>
+                  <Accordion type="single" collapsible className="w-full">
+                    <AccordionItem value="format-prets">
+                      <AccordionTrigger className="text-sm">
+                        <span className="flex items-center">
+                          <Info className="h-4 w-4 mr-2" />
+                          Format requis
+                        </span>
+                      </AccordionTrigger>
+                      <AccordionContent>
+                        <div className="text-sm p-3 bg-muted rounded-md" dangerouslySetInnerHTML={{ __html: templateDocs.prets }} />
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
                 </Card>
                 
-                <Card className="p-4 flex items-start gap-3">
-                  <FileText className="h-8 w-8 text-green-500" />
-                  <div>
-                    <h3 className="font-medium">Gabarit CSV pour Cash Flows</h3>
-                    <p className="text-sm text-muted-foreground mb-2">
-                      Format pour importer des cash flows prévisionnels.
-                    </p>
-                    <Button size="sm" variant="outline" onClick={() => handleDownloadTemplate('cashflows')}>
-                      <Download className="h-4 w-4 mr-2" />
-                      Télécharger
-                    </Button>
+                <Card className="p-4 flex flex-col gap-3">
+                  <div className="flex items-start gap-3">
+                    <FileText className="h-8 w-8 text-green-500 shrink-0" />
+                    <div>
+                      <h3 className="font-medium">Gabarit CSV pour Cash Flows</h3>
+                      <p className="text-sm text-muted-foreground mb-2">
+                        Format pour importer des cash flows prévisionnels.
+                      </p>
+                      <Button size="sm" variant="outline" onClick={() => handleDownloadTemplate('cashflows')}>
+                        <Download className="h-4 w-4 mr-2" />
+                        Télécharger
+                      </Button>
+                    </div>
                   </div>
+                  <Accordion type="single" collapsible className="w-full">
+                    <AccordionItem value="format-cashflows">
+                      <AccordionTrigger className="text-sm">
+                        <span className="flex items-center">
+                          <Info className="h-4 w-4 mr-2" />
+                          Format requis
+                        </span>
+                      </AccordionTrigger>
+                      <AccordionContent>
+                        <div className="text-sm p-3 bg-muted rounded-md" dangerouslySetInnerHTML={{ __html: templateDocs.cashflows }} />
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
                 </Card>
                 
-                <Card className="p-4 flex items-start gap-3">
-                  <FileText className="h-8 w-8 text-purple-500" />
-                  <div>
-                    <h3 className="font-medium">Gabarit pour Paramètres</h3>
-                    <p className="text-sm text-muted-foreground mb-2">
-                      Format pour les paramètres de calcul personnalisés.
-                    </p>
-                    <Button size="sm" variant="outline" onClick={() => handleDownloadTemplate('parametres')}>
-                      <Download className="h-4 w-4 mr-2" />
-                      Télécharger
-                    </Button>
+                <Card className="p-4 flex flex-col gap-3">
+                  <div className="flex items-start gap-3">
+                    <FileText className="h-8 w-8 text-purple-500 shrink-0" />
+                    <div>
+                      <h3 className="font-medium">Gabarit pour Paramètres</h3>
+                      <p className="text-sm text-muted-foreground mb-2">
+                        Format pour les paramètres de calcul personnalisés.
+                      </p>
+                      <Button size="sm" variant="outline" onClick={() => handleDownloadTemplate('parametres')}>
+                        <Download className="h-4 w-4 mr-2" />
+                        Télécharger
+                      </Button>
+                    </div>
                   </div>
+                  <Accordion type="single" collapsible className="w-full">
+                    <AccordionItem value="format-parametres">
+                      <AccordionTrigger className="text-sm">
+                        <span className="flex items-center">
+                          <Info className="h-4 w-4 mr-2" />
+                          Format requis
+                        </span>
+                      </AccordionTrigger>
+                      <AccordionContent>
+                        <div className="text-sm p-3 bg-muted rounded-md" dangerouslySetInnerHTML={{ __html: templateDocs.parametres }} />
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
                 </Card>
                 
-                <Card className="p-4 flex items-start gap-3">
-                  <FileText className="h-8 w-8 text-amber-500" />
-                  <div>
-                    <h3 className="font-medium">Documentation</h3>
-                    <p className="text-sm text-muted-foreground mb-2">
-                      Guide complet pour l'importation des données.
-                    </p>
-                    <Button size="sm" variant="outline" onClick={() => handleDownloadTemplate('documentation')}>
-                      <Download className="h-4 w-4 mr-2" />
-                      Télécharger
-                    </Button>
+                <Card className="p-4 flex flex-col gap-3">
+                  <div className="flex items-start gap-3">
+                    <FileText className="h-8 w-8 text-amber-500 shrink-0" />
+                    <div>
+                      <h3 className="font-medium">Documentation</h3>
+                      <p className="text-sm text-muted-foreground mb-2">
+                        Guide complet pour l'importation des données.
+                      </p>
+                      <Button size="sm" variant="outline" onClick={() => handleDownloadTemplate('documentation')}>
+                        <Download className="h-4 w-4 mr-2" />
+                        Télécharger
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="mt-2 text-sm p-3 bg-muted rounded-md">
+                    <p>Ce document contient des instructions détaillées pour :</p>
+                    <ul className="list-disc list-inside mt-2 pl-2">
+                      <li>Préparer vos données pour l'importation</li>
+                      <li>Comprendre les formats de fichiers acceptés</li>
+                      <li>Résoudre les problèmes d'importation courants</li>
+                      <li>Vérifier la validité des données avant import</li>
+                    </ul>
                   </div>
                 </Card>
               </div>

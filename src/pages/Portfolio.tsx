@@ -41,9 +41,12 @@ import {
   Building, 
   Download,
   FileSpreadsheet,
-  Filter
+  Filter,
+  Plus,
+  Upload
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { toast } from '@/hooks/use-toast';
 
 // Couleurs pour les graphiques
 const COLORS = ['#00C48C', '#2D5BFF', '#FFB800', '#FF3B5B', '#1A2C42', '#9B87F5', '#7E69AB'];
@@ -105,24 +108,59 @@ const Portfolio = () => {
     }).format(value);
   };
   
+  // Gestionnaires d'événements pour les boutons
+  const handleImport = () => {
+    window.location.href = '/import';
+  };
+  
+  const handleExport = () => {
+    toast({
+      title: "Export en cours",
+      description: "Le portefeuille est en cours d'exportation au format Excel...",
+      variant: "default"
+    });
+    
+    // Simuler un délai pour l'export
+    setTimeout(() => {
+      toast({
+        title: "Export réussi",
+        description: "Le fichier a été téléchargé avec succès.",
+        variant: "default"
+      });
+      
+      // Dans une application réelle, on déclencherait ici le téléchargement du fichier généré côté serveur
+      const fakeFileUrl = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,UEsDBBQABgAIAAAAIQD21qXvAgEAABQCAAATA`;
+      const a = document.createElement('a');
+      a.href = fakeFileUrl;
+      a.download = `portefeuille_prets_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      
+    }, 1500);
+  };
+  
+  const handleNewLoan = () => {
+    window.location.href = '/loans/new';
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Portefeuille de Prêts</h1>
         
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm">
-            <Filter className="h-4 w-4 mr-2" />
-            Filtres
+          <Button variant="outline" size="sm" onClick={handleImport}>
+            <Upload className="h-4 w-4 mr-2" />
+            Import
           </Button>
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" onClick={handleExport}>
             <FileSpreadsheet className="h-4 w-4 mr-2" />
-            Exporter
+            Export
           </Button>
-          <Button variant="secondary" size="sm" asChild>
-            <Link to="/documentation">
-              Documentation
-            </Link>
+          <Button variant="default" size="sm" onClick={handleNewLoan}>
+            <Plus className="h-4 w-4 mr-2" />
+            Nouveau Prêt
           </Button>
         </div>
       </div>

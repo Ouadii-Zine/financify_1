@@ -117,6 +117,51 @@ const templates: Record<string, ExcelTemplate> = {
         ]
       }
     ]
+  },
+  documentation: {
+    name: "Guide d'Import de Données",
+    description: "Documentation complète pour l'import de données",
+    sheets: [
+      {
+        name: "Instructions",
+        columns: [
+          { header: "Section", key: "section", width: 30, description: "Section du guide", required: true, type: "string" },
+          { header: "Titre", key: "title", width: 40, description: "Titre de la section", required: true, type: "string" },
+          { header: "Description", key: "description", width: 60, description: "Description détaillée", required: true, type: "string" }
+        ],
+        sampleData: [
+          { section: "Introduction", title: "Vue d'ensemble", description: "Ce guide explique comment préparer et importer vos données." },
+          { section: "Préparation", title: "Format des fichiers", description: "Les formats acceptés sont Excel (.xlsx) et CSV." },
+          { section: "Validation", title: "Vérification des données", description: "Assurez-vous que toutes les données obligatoires sont présentes." }
+        ]
+      }
+    ]
+  },
+  rapport: {
+    name: "Modèle de Rapport",
+    description: "Format pour générer des rapports",
+    sheets: [
+      {
+        name: "Synthèse Portfolio",
+        columns: [
+          { header: "Métrique", key: "metric", width: 30, description: "Nom de la métrique", required: true, type: "string" },
+          { header: "Valeur", key: "value", width: 20, description: "Valeur de la métrique", required: true, type: "number" },
+          { header: "Variation", key: "change", width: 15, description: "Variation vs période précédente", required: false, type: "number" },
+          { header: "Unité", key: "unit", width: 10, description: "Unité de mesure", required: false, type: "string" }
+        ]
+      },
+      {
+        name: "Détail par Prêt",
+        columns: [
+          { header: "ID Prêt", key: "loanId", width: 20, description: "Identifiant du prêt", required: true, type: "string" },
+          { header: "Nom", key: "name", width: 30, description: "Nom du prêt", required: true, type: "string" },
+          { header: "Encours", key: "outstanding", width: 20, description: "Encours actuel", required: true, type: "number" },
+          { header: "EVA", key: "eva", width: 20, description: "Economic Value Added", required: true, type: "number" },
+          { header: "ROE", key: "roe", width: 15, description: "Return on Equity", required: true, type: "number" },
+          { header: "EL", key: "el", width: 15, description: "Expected Loss", required: true, type: "number" }
+        ]
+      }
+    ]
   }
 };
 
@@ -165,15 +210,15 @@ export const generateTemplateDocumentation = (templateType?: string): string => 
     
     template.sheets.forEach(sheet => {
       html += `<h3>Feuille: ${sheet.name}</h3>`;
-      html += '<table><tr><th>Colonne</th><th>Description</th><th>Obligatoire</th><th>Type</th><th>Format/Options</th></tr>';
+      html += '<table class="w-full border-collapse"><tr class="bg-muted"><th class="p-2 text-left">Colonne</th><th class="p-2 text-left">Description</th><th class="p-2 text-center">Obligatoire</th><th class="p-2 text-left">Type</th><th class="p-2 text-left">Format/Options</th></tr>';
       
       sheet.columns.forEach(col => {
-        html += `<tr>
-          <td>${col.header}</td>
-          <td>${col.description}</td>
-          <td>${col.required ? 'Oui' : 'Non'}</td>
-          <td>${col.type}</td>
-          <td>${col.options ? col.options.join(', ') : (col.format || '')}</td>
+        html += `<tr class="border-t border-b border-muted">
+          <td class="p-2 font-medium">${col.header}</td>
+          <td class="p-2">${col.description}</td>
+          <td class="p-2 text-center">${col.required ? '✓' : '-'}</td>
+          <td class="p-2">${col.type}</td>
+          <td class="p-2">${col.options ? col.options.join(', ') : (col.format || '')}</td>
         </tr>`;
       });
       
@@ -187,7 +232,7 @@ export const generateTemplateDocumentation = (templateType?: string): string => 
   let html = '<h2>Gabarits Excel Disponibles</h2>';
   
   Object.entries(templates).forEach(([key, template]) => {
-    html += `<div>
+    html += `<div class="mb-4">
       <h3>${template.name}</h3>
       <p>${template.description}</p>
       <p>Contient ${template.sheets.length} feuille(s) et ${template.sheets.reduce((sum, sheet) => sum + sheet.columns.length, 0)} colonnes au total.</p>
@@ -197,8 +242,35 @@ export const generateTemplateDocumentation = (templateType?: string): string => 
   return html;
 };
 
+/**
+ * Exporte des données au format Excel
+ * @param data Données à exporter
+ * @param fileName Nom du fichier à générer
+ * @param templateType Type de gabarit à utiliser (optionnel)
+ * @returns Un objet indiquant si l'opération a réussi et un message
+ */
+export const exportDataToExcel = (data: any, fileName: string, templateType?: string): { success: boolean, message: string } => {
+  // Dans une application réelle, on utiliserait les données et le gabarit pour générer un fichier Excel
+  // Pour cette démonstration, on simule un export
+  
+  // Créer un lien temporaire et déclencher le téléchargement
+  const fakeFileUrl = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,UEsDBBQABgAIAAAAIQD21qXvAgEAABQCAAATA`;
+  const a = document.createElement('a');
+  a.href = fakeFileUrl;
+  a.download = fileName.endsWith('.xlsx') ? fileName : `${fileName}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  
+  return {
+    success: true,
+    message: `Les données ont été exportées avec succès dans le fichier "${fileName}".`
+  };
+};
+
 export default {
   downloadExcelTemplate,
   generateTemplateDocumentation,
+  exportDataToExcel,
   templates
 };
