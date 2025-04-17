@@ -9,6 +9,14 @@ import Dashboard from "./pages/Dashboard";
 import LoansList from "./pages/LoansList";
 import LoanDetail from "./pages/LoanDetail";
 import NotFound from "./pages/NotFound";
+import Portfolio from "./pages/Portfolio";
+import AnalyticsEva from "./pages/AnalyticsEva";
+import AnalyticsRisk from "./pages/AnalyticsRisk";
+import AnalyticsPerformance from "./pages/AnalyticsPerformance";
+import Simulations from "./pages/Simulations";
+import Import from "./pages/Import";
+import Parameters from "./pages/Parameters";
+import Reports from "./pages/Reports";
 
 const queryClient = new QueryClient();
 
@@ -20,9 +28,16 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Layout><Dashboard /></Layout>} />
+          <Route path="/portfolio" element={<Layout><Portfolio /></Layout>} />
           <Route path="/loans" element={<Layout><LoansList /></Layout>} />
           <Route path="/loans/:id" element={<Layout><LoanDetail /></Layout>} />
-          {/* Les routes pour les autres pages seront ajoutées ultérieurement */}
+          <Route path="/analytics/eva" element={<Layout><AnalyticsEva /></Layout>} />
+          <Route path="/analytics/risk" element={<Layout><AnalyticsRisk /></Layout>} />
+          <Route path="/analytics/performance" element={<Layout><AnalyticsPerformance /></Layout>} />
+          <Route path="/simulations" element={<Layout><Simulations /></Layout>} />
+          <Route path="/import" element={<Layout><Import /></Layout>} />
+          <Route path="/parameters" element={<Layout><Parameters /></Layout>} />
+          <Route path="/reports" element={<Layout><Reports /></Layout>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
