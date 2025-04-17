@@ -48,22 +48,22 @@ export function AppSidebar() {
           <SidebarGroupLabel>Général</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              <SidebarMenuItem active={isActive('/')}>
-                <SidebarMenuButton onClick={() => navigate('/')}>
+              <SidebarMenuItem>
+                <SidebarMenuButton onClick={() => navigate('/')} isActive={isActive('/')}>
                   <Home />
                   <span>Tableau de bord</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               
-              <SidebarMenuItem active={isActive('/portfolio')}>
-                <SidebarMenuButton onClick={() => navigate('/portfolio')}>
+              <SidebarMenuItem>
+                <SidebarMenuButton onClick={() => navigate('/portfolio')} isActive={isActive('/portfolio')}>
                   <Briefcase />
                   <span>Portefeuille</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               
-              <SidebarMenuItem active={isActive('/loans')}>
-                <SidebarMenuButton onClick={() => navigate('/loans')}>
+              <SidebarMenuItem>
+                <SidebarMenuButton onClick={() => navigate('/loans')} isActive={isActive('/loans')}>
                   <CreditCard />
                   <span>Prêts</span>
                 </SidebarMenuButton>
@@ -76,29 +76,29 @@ export function AppSidebar() {
           <SidebarGroupLabel>Analyse</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              <SidebarMenuItem active={isActive('/analytics/eva')}>
-                <SidebarMenuButton onClick={() => navigate('/analytics/eva')}>
+              <SidebarMenuItem>
+                <SidebarMenuButton onClick={() => navigate('/analytics/eva')} isActive={isActive('/analytics/eva')}>
                   <BarChart3 />
                   <span>EVA Analytics</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               
-              <SidebarMenuItem active={isActive('/analytics/risk')}>
-                <SidebarMenuButton onClick={() => navigate('/analytics/risk')}>
+              <SidebarMenuItem>
+                <SidebarMenuButton onClick={() => navigate('/analytics/risk')} isActive={isActive('/analytics/risk')}>
                   <PieChartIcon />
                   <span>Risque</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               
-              <SidebarMenuItem active={isActive('/analytics/performance')}>
-                <SidebarMenuButton onClick={() => navigate('/analytics/performance')}>
+              <SidebarMenuItem>
+                <SidebarMenuButton onClick={() => navigate('/analytics/performance')} isActive={isActive('/analytics/performance')}>
                   <LineChart />
                   <span>Performance</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               
-              <SidebarMenuItem active={isActive('/simulations')}>
-                <SidebarMenuButton onClick={() => navigate('/simulations')}>
+              <SidebarMenuItem>
+                <SidebarMenuButton onClick={() => navigate('/simulations')} isActive={isActive('/simulations')}>
                   <CalculatorIcon />
                   <span>Simulations</span>
                 </SidebarMenuButton>
@@ -111,22 +111,22 @@ export function AppSidebar() {
           <SidebarGroupLabel>Outils</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              <SidebarMenuItem active={isActive('/import')}>
-                <SidebarMenuButton onClick={() => navigate('/import')}>
+              <SidebarMenuItem>
+                <SidebarMenuButton onClick={() => navigate('/import')} isActive={isActive('/import')}>
                   <Upload />
                   <span>Import</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               
-              <SidebarMenuItem active={isActive('/parameters')}>
-                <SidebarMenuButton onClick={() => navigate('/parameters')}>
+              <SidebarMenuItem>
+                <SidebarMenuButton onClick={() => navigate('/parameters')} isActive={isActive('/parameters')}>
                   <Settings />
                   <span>Paramètres</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               
-              <SidebarMenuItem active={isActive('/reports')}>
-                <SidebarMenuButton onClick={() => navigate('/reports')}>
+              <SidebarMenuItem>
+                <SidebarMenuButton onClick={() => navigate('/reports')} isActive={isActive('/reports')}>
                   <FileSpreadsheet />
                   <span>Rapports</span>
                 </SidebarMenuButton>
