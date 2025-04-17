@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -16,9 +17,35 @@ import {
 } from '@/components/ui/table';
 import { toast } from '@/hooks/use-toast';
 import { defaultCalculationParameters } from '@/data/sampleData';
+import { PlusCircle, Save, Trash2 } from 'lucide-react';
+
+// Extend the default parameters type to include priceFactor and spread
+interface CalculationParameters {
+  targetROE: number;
+  corporateTaxRate: number;
+  capitalRatio: number;
+  fundingCost: number;
+  operationalCostRatio: number;
+  pdCurve: { rating: string; pd: number; }[];
+  lgdAssumptions: { sector: string; lgd: number; }[];
+  stressScenarios: {
+    name: string;
+    pdMultiplier: number;
+    lgdMultiplier: number;
+    rateShift: number;
+    spreadShift: number;
+  }[];
+  priceFactor: number;
+  spread: number;
+}
 
 const Parameters = () => {
-  const [parameters, setParameters] = useState({...defaultCalculationParameters});
+  // Initialize with default parameters and add the missing properties
+  const [parameters, setParameters] = useState<CalculationParameters>({
+    ...defaultCalculationParameters,
+    priceFactor: 1.5,
+    spread: 0.2
+  });
   
   const handleSaveParameters = () => {
     toast({
@@ -29,7 +56,11 @@ const Parameters = () => {
   };
   
   const handleResetToDefault = () => {
-    setParameters({...defaultCalculationParameters});
+    setParameters({
+      ...defaultCalculationParameters,
+      priceFactor: 1.5,
+      spread: 0.2
+    });
     toast({
       title: "Paramètres réinitialisés",
       description: "Les paramètres ont été restaurés aux valeurs par défaut.",

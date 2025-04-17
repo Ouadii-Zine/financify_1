@@ -1,12 +1,30 @@
+
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { Download, FileSpreadsheet, FilePdf, FileText, RefreshCw, Clock } from 'lucide-react';
+import { 
+  Download, 
+  FileSpreadsheet, 
+  FileText,
+  RefreshCw, 
+  Clock, 
+  Calendar,
+  PrinterIcon,
+  Eye
+} from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { samplePortfolio } from '@/data/sampleData';
+import { 
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableHead, 
+  TableHeader, 
+  TableRow 
+} from '@/components/ui/table';
 
 const Reports = () => {
   const [isGenerating, setIsGenerating] = useState(false);
@@ -131,7 +149,7 @@ const Reports = () => {
                 <Card className="p-4">
                   <div className="flex flex-col h-full">
                     <div className="flex items-start gap-3 mb-4">
-                      <FilePdf className="h-8 w-8 text-red-500" />
+                      <FileText className="h-8 w-8 text-red-500" />
                       <div>
                         <h3 className="font-medium">Dashboard Exécutif</h3>
                         <p className="text-sm text-muted-foreground">
@@ -179,7 +197,7 @@ const Reports = () => {
               <ul className="space-y-2">
                 <li className="flex items-center justify-between p-2 hover:bg-muted/50 rounded-md">
                   <div className="flex items-center">
-                    <FilePdf className="h-5 w-5 mr-2 text-red-500" />
+                    <FileText className="h-5 w-5 mr-2 text-red-500" />
                     <span>Dashboard Exécutif - Q1 2025</span>
                   </div>
                   <div className="flex items-center gap-2">
