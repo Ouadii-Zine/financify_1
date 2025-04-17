@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Upload, FileText, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Upload, FileText, AlertTriangle, CheckCircle2, Download } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Table, 
@@ -82,7 +82,7 @@ const Import = () => {
         toast({
           title: "Import réussi",
           description: `${previewData.length} prêts ont été importés avec succès.`,
-          variant: "success"
+          variant: "default" // Modifié de "success" à "default"
         });
       } else {
         setImportSuccess(false);
@@ -96,6 +96,27 @@ const Import = () => {
       
       setIsUploading(false);
     }, 1500);
+  };
+
+  // Fonction pour télécharger les gabarits Excel
+  const handleDownloadTemplate = (templateType: string) => {
+    // Dans une application réelle, ces URL pointeraient vers des fichiers hébergés sur un serveur
+    // Pour cette démo, nous simulons le téléchargement
+    const fakeTemplateUrl = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,UEsDBBQABgAIAAAAIQD21qXvAgEAABQCAAATA`;
+    
+    // Créer un lien temporaire et déclencher le téléchargement
+    const a = document.createElement('a');
+    a.href = fakeTemplateUrl;
+    a.download = `gabarit_${templateType}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    
+    toast({
+      title: "Téléchargement initié",
+      description: `Le gabarit ${templateType} va être téléchargé.`,
+      variant: "default"
+    });
   };
   
   return (
@@ -262,7 +283,10 @@ const Import = () => {
                     <p className="text-sm text-muted-foreground mb-2">
                       Modèle pour importer des prêts avec tous les champs requis.
                     </p>
-                    <Button size="sm" variant="outline">Télécharger</Button>
+                    <Button size="sm" variant="outline" onClick={() => handleDownloadTemplate('prets')}>
+                      <Download className="h-4 w-4 mr-2" />
+                      Télécharger
+                    </Button>
                   </div>
                 </Card>
                 
@@ -273,7 +297,10 @@ const Import = () => {
                     <p className="text-sm text-muted-foreground mb-2">
                       Format pour importer des cash flows prévisionnels.
                     </p>
-                    <Button size="sm" variant="outline">Télécharger</Button>
+                    <Button size="sm" variant="outline" onClick={() => handleDownloadTemplate('cashflows')}>
+                      <Download className="h-4 w-4 mr-2" />
+                      Télécharger
+                    </Button>
                   </div>
                 </Card>
                 
@@ -284,7 +311,10 @@ const Import = () => {
                     <p className="text-sm text-muted-foreground mb-2">
                       Format pour les paramètres de calcul personnalisés.
                     </p>
-                    <Button size="sm" variant="outline">Télécharger</Button>
+                    <Button size="sm" variant="outline" onClick={() => handleDownloadTemplate('parametres')}>
+                      <Download className="h-4 w-4 mr-2" />
+                      Télécharger
+                    </Button>
                   </div>
                 </Card>
                 
@@ -295,7 +325,10 @@ const Import = () => {
                     <p className="text-sm text-muted-foreground mb-2">
                       Guide complet pour l'importation des données.
                     </p>
-                    <Button size="sm" variant="outline">Télécharger</Button>
+                    <Button size="sm" variant="outline" onClick={() => handleDownloadTemplate('documentation')}>
+                      <Download className="h-4 w-4 mr-2" />
+                      Télécharger
+                    </Button>
                   </div>
                 </Card>
               </div>

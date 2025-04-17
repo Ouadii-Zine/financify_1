@@ -1,124 +1,352 @@
-
 import React, { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
-} from '@/components/ui/table';
-import { FileText, Download, BarChart3, Calendar, Eye, PrinterIcon } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { Download, FileSpreadsheet, FilePdf, FileText, RefreshCw, Clock } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { samplePortfolio } from '@/data/sampleData';
 
 const Reports = () => {
-  const [activeTab, setActiveTab] = useState("standard");
+  const [isGenerating, setIsGenerating] = useState(false);
   
   const handleGenerateReport = (reportType: string) => {
-    toast({
-      title: "Rapport généré",
-      description: `Le rapport ${reportType} a été généré avec succès.`,
-      variant: "success"
-    });
+    setIsGenerating(true);
+    
+    // Simuler un délai de génération
+    setTimeout(() => {
+      setIsGenerating(false);
+      
+      toast({
+        title: "Rapport généré",
+        description: `Le rapport ${reportType} a été généré avec succès.`,
+        variant: "default"
+      });
+    }, 2000);
   };
   
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Rapports</h1>
       
-      <Tabs defaultValue="standard" onValueChange={setActiveTab}>
+      <Tabs defaultValue="portfolio">
         <TabsList>
-          <TabsTrigger value="standard">Rapports Standard</TabsTrigger>
-          <TabsTrigger value="regulatory">Rapports Réglementaires</TabsTrigger>
-          <TabsTrigger value="custom">Rapports Personnalisés</TabsTrigger>
-          <TabsTrigger value="scheduled">Rapports Programmés</TabsTrigger>
+          <TabsTrigger value="portfolio">Portefeuille</TabsTrigger>
+          <TabsTrigger value="risk">Risque</TabsTrigger>
+          <TabsTrigger value="regulatory">Réglementaire</TabsTrigger>
+          <TabsTrigger value="scheduled">Planifiés</TabsTrigger>
         </TabsList>
         
-        <TabsContent value="standard">
+        <TabsContent value="portfolio" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Rapports Standard</CardTitle>
+              <CardTitle>Rapports de Portefeuille</CardTitle>
               <CardDescription>
-                Générez des rapports prédéfinis pour analyser votre portefeuille.
+                Générer des rapports détaillés sur la composition et la performance du portefeuille.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Card className="p-4 flex flex-col">
-                  <div className="flex items-start gap-3 mb-3">
-                    <BarChart3 className="h-8 w-8 text-blue-500" />
-                    <div className="flex-1">
-                      <h3 className="font-medium">Rapport de Performance</h3>
-                      <p className="text-sm text-muted-foreground">
-                        Analyse complète de la performance EVA et ROE du portefeuille.
-                      </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <Card className="p-4">
+                  <div className="flex flex-col h-full">
+                    <div className="flex items-start gap-3 mb-4">
+                      <FileSpreadsheet className="h-8 w-8 text-blue-500" />
+                      <div>
+                        <h3 className="font-medium">Rapport de Performance</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Analyse détaillée des performances du portefeuille par secteur, notation et maturité.
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex gap-2 mt-auto">
-                    <Button 
-                      size="sm" 
-                      className="flex-1 flex items-center gap-1"
-                      onClick={() => handleGenerateReport('Performance')}
-                    >
-                      <FileText className="h-4 w-4" />
-                      <span>Générer</span>
-                    </Button>
-                    <Button size="sm" variant="outline">
-                      <Eye className="h-4 w-4" />
-                    </Button>
+                    <div className="mt-auto pt-4 flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox id="excel-performance" />
+                        <Label htmlFor="excel-performance" className="text-sm">Excel</Label>
+                        
+                        <Checkbox id="pdf-performance" />
+                        <Label htmlFor="pdf-performance" className="text-sm">PDF</Label>
+                      </div>
+                      <Button 
+                        size="sm" 
+                        onClick={() => handleGenerateReport('Performance')}
+                        disabled={isGenerating}
+                      >
+                        {isGenerating ? (
+                          <>
+                            <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                            Génération...
+                          </>
+                        ) : (
+                          <>
+                            <Download className="h-4 w-4 mr-2" />
+                            Générer
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 </Card>
                 
-                <Card className="p-4 flex flex-col">
-                  <div className="flex items-start gap-3 mb-3">
-                    <FileText className="h-8 w-8 text-green-500" />
-                    <div className="flex-1">
-                      <h3 className="font-medium">Rapport de Risque</h3>
-                      <p className="text-sm text-muted-foreground">
-                        Détail des risques par secteur, notation et type de prêt.
-                      </p>
+                <Card className="p-4">
+                  <div className="flex flex-col h-full">
+                    <div className="flex items-start gap-3 mb-4">
+                      <FileSpreadsheet className="h-8 w-8 text-green-500" />
+                      <div>
+                        <h3 className="font-medium">Rapport EVA</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Analyse de la création de valeur économique ajoutée par prêt et par segment.
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex gap-2 mt-auto">
-                    <Button 
-                      size="sm" 
-                      className="flex-1 flex items-center gap-1"
-                      onClick={() => handleGenerateReport('Risque')}
-                    >
-                      <FileText className="h-4 w-4" />
-                      <span>Générer</span>
-                    </Button>
-                    <Button size="sm" variant="outline">
-                      <Eye className="h-4 w-4" />
-                    </Button>
+                    <div className="mt-auto pt-4 flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox id="excel-eva" />
+                        <Label htmlFor="excel-eva" className="text-sm">Excel</Label>
+                        
+                        <Checkbox id="pdf-eva" />
+                        <Label htmlFor="pdf-eva" className="text-sm">PDF</Label>
+                      </div>
+                      <Button 
+                        size="sm" 
+                        onClick={() => handleGenerateReport('EVA')}
+                        disabled={isGenerating}
+                      >
+                        {isGenerating ? (
+                          <>
+                            <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                            Génération...
+                          </>
+                        ) : (
+                          <>
+                            <Download className="h-4 w-4 mr-2" />
+                            Générer
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 </Card>
                 
-                <Card className="p-4 flex flex-col">
-                  <div className="flex items-start gap-3 mb-3">
-                    <Calendar className="h-8 w-8 text-red-500" />
-                    <div className="flex-1">
-                      <h3 className="font-medium">Projection de Cash Flows</h3>
-                      <p className="text-sm text-muted-foreground">
-                        Prévisions des entrées et sorties de trésorerie par période.
-                      </p>
+                <Card className="p-4">
+                  <div className="flex flex-col h-full">
+                    <div className="flex items-start gap-3 mb-4">
+                      <FilePdf className="h-8 w-8 text-red-500" />
+                      <div>
+                        <h3 className="font-medium">Dashboard Exécutif</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Synthèse des indicateurs clés de performance pour le comité exécutif.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-auto pt-4 flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox id="pdf-dashboard" checked disabled />
+                        <Label htmlFor="pdf-dashboard" className="text-sm">PDF</Label>
+                      </div>
+                      <Button 
+                        size="sm" 
+                        onClick={() => handleGenerateReport('Dashboard Exécutif')}
+                        disabled={isGenerating}
+                      >
+                        {isGenerating ? (
+                          <>
+                            <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                            Génération...
+                          </>
+                        ) : (
+                          <>
+                            <Download className="h-4 w-4 mr-2" />
+                            Générer
+                          </>
+                        )}
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex gap-2 mt-auto">
-                    <Button 
-                      size="sm" 
-                      className="flex-1 flex items-center gap-1"
-                      onClick={() => handleGenerateReport('Cash Flows')}
-                    >
-                      <FileText className="h-4 w-4" />
-                      <span>Générer</span>
+                </Card>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader>
+              <CardTitle>Rapports Historiques</CardTitle>
+              <CardDescription>
+                Accéder aux rapports générés précédemment.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-2">
+                <li className="flex items-center justify-between p-2 hover:bg-muted/50 rounded-md">
+                  <div className="flex items-center">
+                    <FilePdf className="h-5 w-5 mr-2 text-red-500" />
+                    <span>Dashboard Exécutif - Q1 2025</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">15/04/2025</span>
+                    <Button size="sm" variant="ghost">
+                      <Download className="h-4 w-4" />
                     </Button>
-                    <Button size="sm" variant="outline">
-                      <Eye className="h-4 w-4" />
+                  </div>
+                </li>
+                
+                <li className="flex items-center justify-between p-2 hover:bg-muted/50 rounded-md">
+                  <div className="flex items-center">
+                    <FileSpreadsheet className="h-5 w-5 mr-2 text-green-500" />
+                    <span>Rapport EVA - Mars 2025</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">05/04/2025</span>
+                    <Button size="sm" variant="ghost">
+                      <Download className="h-4 w-4" />
                     </Button>
+                  </div>
+                </li>
+                
+                <li className="flex items-center justify-between p-2 hover:bg-muted/50 rounded-md">
+                  <div className="flex items-center">
+                    <FileSpreadsheet className="h-5 w-5 mr-2 text-blue-500" />
+                    <span>Rapport de Performance - Février 2025</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">10/03/2025</span>
+                    <Button size="sm" variant="ghost">
+                      <Download className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </li>
+              </ul>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        
+        <TabsContent value="risk">
+          <Card>
+            <CardHeader>
+              <CardTitle>Rapports de Risque</CardTitle>
+              <CardDescription>
+                Générez des rapports détaillés sur les risques du portefeuille.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <Card className="p-4">
+                  <div className="flex flex-col h-full">
+                    <div className="flex items-start gap-3 mb-4">
+                      <FileSpreadsheet className="h-8 w-8 text-red-500" />
+                      <div>
+                        <h3 className="font-medium">Rapport de Risque</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Analyse détaillée des risques par secteur, notation et type de prêt.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-auto pt-4 flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox id="excel-risk" />
+                        <Label htmlFor="excel-risk" className="text-sm">Excel</Label>
+                        
+                        <Checkbox id="pdf-risk" />
+                        <Label htmlFor="pdf-risk" className="text-sm">PDF</Label>
+                      </div>
+                      <Button 
+                        size="sm" 
+                        onClick={() => handleGenerateReport('Risque')}
+                        disabled={isGenerating}
+                      >
+                        {isGenerating ? (
+                          <>
+                            <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                            Génération...
+                          </>
+                        ) : (
+                          <>
+                            <Download className="h-4 w-4 mr-2" />
+                            Générer
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+                
+                <Card className="p-4">
+                  <div className="flex flex-col h-full">
+                    <div className="flex items-start gap-3 mb-4">
+                      <FileSpreadsheet className="h-8 w-8 text-green-500" />
+                      <div>
+                        <h3 className="font-medium">Rapport de Liquideur</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Analyse des ratios de liquidité du portefeuille.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-auto pt-4 flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox id="excel-liquidity" />
+                        <Label htmlFor="excel-liquidity" className="text-sm">Excel</Label>
+                        
+                        <Checkbox id="pdf-liquidity" />
+                        <Label htmlFor="pdf-liquidity" className="text-sm">PDF</Label>
+                      </div>
+                      <Button 
+                        size="sm" 
+                        onClick={() => handleGenerateReport('Liquideur')}
+                        disabled={isGenerating}
+                      >
+                        {isGenerating ? (
+                          <>
+                            <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                            Génération...
+                          </>
+                        ) : (
+                          <>
+                            <Download className="h-4 w-4 mr-2" />
+                            Générer
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+                
+                <Card className="p-4">
+                  <div className="flex flex-col h-full">
+                    <div className="flex items-start gap-3 mb-4">
+                      <FileSpreadsheet className="h-8 w-8 text-blue-500" />
+                      <div>
+                        <h3 className="font-medium">Rapport de Crédit</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Analyse des risques liés au crédit du portefeuille.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-auto pt-4 flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox id="excel-credit" />
+                        <Label htmlFor="excel-credit" className="text-sm">Excel</Label>
+                        
+                        <Checkbox id="pdf-credit" />
+                        <Label htmlFor="pdf-credit" className="text-sm">PDF</Label>
+                      </div>
+                      <Button 
+                        size="sm" 
+                        onClick={() => handleGenerateReport('Crédit')}
+                        disabled={isGenerating}
+                      >
+                        {isGenerating ? (
+                          <>
+                            <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                            Génération...
+                          </>
+                        ) : (
+                          <>
+                            <Download className="h-4 w-4 mr-2" />
+                            Générer
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 </Card>
               </div>
@@ -218,82 +446,6 @@ const Reports = () => {
                           onClick={() => handleGenerateReport('Liquidité')}
                         >
                           <FileText className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        
-        <TabsContent value="custom">
-          <Card>
-            <CardHeader>
-              <CardTitle>Rapports Personnalisés</CardTitle>
-              <CardDescription>
-                Créez et générez des rapports sur mesure selon vos besoins.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="border rounded-lg p-8 text-center mb-4">
-                <div className="flex flex-col items-center gap-2">
-                  <FileText className="h-12 w-12 text-muted-foreground mb-2" />
-                  <h3 className="text-lg font-medium">Créez votre rapport personnalisé</h3>
-                  <p className="text-sm text-muted-foreground max-w-md mx-auto mb-4">
-                    Sélectionnez les métriques, filtres et présentation pour générer un rapport adapté à vos besoins spécifiques.
-                  </p>
-                  <Button>Créer un nouveau rapport</Button>
-                </div>
-              </div>
-              
-              <h3 className="text-lg font-medium mb-3">Mes Rapports Personnalisés</h3>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nom</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Créé le</TableHead>
-                    <TableHead>Dernière exécution</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <TableRow>
-                    <TableCell className="font-medium">EVA Sectorielle</TableCell>
-                    <TableCell>Analyse EVA détaillée par secteur économique</TableCell>
-                    <TableCell>12/03/2025</TableCell>
-                    <TableCell>11/04/2025</TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button size="sm" variant="outline">
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                        <Button size="sm">
-                          <FileText className="h-4 w-4" />
-                        </Button>
-                        <Button size="sm" variant="outline">
-                          <Download className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="font-medium">Top Clients</TableCell>
-                    <TableCell>Performance des 20 plus grands clients</TableCell>
-                    <TableCell>05/02/2025</TableCell>
-                    <TableCell>10/04/2025</TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button size="sm" variant="outline">
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                        <Button size="sm">
-                          <FileText className="h-4 w-4" />
-                        </Button>
-                        <Button size="sm" variant="outline">
-                          <Download className="h-4 w-4" />
                         </Button>
                       </div>
                     </TableCell>

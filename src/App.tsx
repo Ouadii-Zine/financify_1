@@ -17,6 +17,7 @@ import Simulations from "./pages/Simulations";
 import Import from "./pages/Import";
 import Parameters from "./pages/Parameters";
 import Reports from "./pages/Reports";
+import Documentation from "./pages/Documentation";
 
 const queryClient = new QueryClient();
 
@@ -38,6 +39,7 @@ const App = () => (
           <Route path="/import" element={<Layout><Import /></Layout>} />
           <Route path="/parameters" element={<Layout><Parameters /></Layout>} />
           <Route path="/reports" element={<Layout><Reports /></Layout>} />
+          <Route path="/documentation" element={<Layout><Documentation /></Layout>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

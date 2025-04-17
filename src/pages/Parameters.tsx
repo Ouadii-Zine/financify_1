@@ -1,7 +1,11 @@
-
 import React, { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
+import { Slider } from '@/components/ui/slider';
+import { Switch } from '@/components/ui/switch';
 import { 
   Table, 
   TableBody, 
@@ -10,85 +14,28 @@ import {
   TableHeader, 
   TableRow 
 } from '@/components/ui/table';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
-import { 
-  Slider 
-} from '@/components/ui/slider';
-import { LineChart, ResponsiveContainer, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
-import { Save, PlusCircle, Trash2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { defaultCalculationParameters } from '@/data/sampleData';
-import { CalculationParameters } from '@/types/finance';
 
 const Parameters = () => {
-  const [params, setParams] = useState<CalculationParameters>({
-    ...defaultCalculationParameters
-  });
-  
-  const handleParameterChange = (key: keyof CalculationParameters, value: number) => {
-    if (key in params) {
-      setParams({ ...params, [key]: value });
-    }
-  };
+  const [parameters, setParameters] = useState({...defaultCalculationParameters});
   
   const handleSaveParameters = () => {
-    // Dans une application réelle, on sauvegarderait les paramètres
     toast({
-      title: "Paramètres sauvegardés",
-      description: "Les nouveaux paramètres ont été enregistrés avec succès.",
-      variant: "success"
+      title: "Paramètres enregistrés",
+      description: "Les paramètres ont été mis à jour avec succès.",
+      variant: "default"
     });
   };
   
-  const handleAddPdMapping = () => {
-    const newPdMappings = [...params.pdCurve, { rating: "", pd: 0 }];
-    setParams({ ...params, pdCurve: newPdMappings });
+  const handleResetToDefault = () => {
+    setParameters({...defaultCalculationParameters});
+    toast({
+      title: "Paramètres réinitialisés",
+      description: "Les paramètres ont été restaurés aux valeurs par défaut.",
+      variant: "default"
+    });
   };
-  
-  const handleRemovePdMapping = (index: number) => {
-    const newPdMappings = [...params.pdCurve];
-    newPdMappings.splice(index, 1);
-    setParams({ ...params, pdCurve: newPdMappings });
-  };
-  
-  const handlePdMappingChange = (index: number, field: 'rating' | 'pd', value: string | number) => {
-    const newPdMappings = [...params.pdCurve];
-    if (field === 'pd') {
-      newPdMappings[index].pd = Number(value);
-    } else {
-      newPdMappings[index].rating = value as string;
-    }
-    setParams({ ...params, pdCurve: newPdMappings });
-  };
-  
-  const handleAddLgdMapping = () => {
-    const newLgdMappings = [...params.lgdAssumptions, { sector: "", lgd: 0 }];
-    setParams({ ...params, lgdAssumptions: newLgdMappings });
-  };
-  
-  const handleRemoveLgdMapping = (index: number) => {
-    const newLgdMappings = [...params.lgdAssumptions];
-    newLgdMappings.splice(index, 1);
-    setParams({ ...params, lgdAssumptions: newLgdMappings });
-  };
-  
-  const handleLgdMappingChange = (index: number, field: 'sector' | 'lgd', value: string | number) => {
-    const newLgdMappings = [...params.lgdAssumptions];
-    if (field === 'lgd') {
-      newLgdMappings[index].lgd = Number(value);
-    } else {
-      newLgdMappings[index].sector = value as string;
-    }
-    setParams({ ...params, lgdAssumptions: newLgdMappings });
-  };
-  
-  // Données pour la courbe de PD
-  const pdCurveData = params.pdCurve.map(item => ({
-    rating: item.rating,
-    pd: item.pd * 100
-  }));
   
   return (
     <div className="space-y-6">
@@ -96,10 +43,10 @@ const Parameters = () => {
       
       <Tabs defaultValue="general">
         <TabsList>
-          <TabsTrigger value="general">Paramètres Généraux</TabsTrigger>
-          <TabsTrigger value="pd-curve">Courbe PD</TabsTrigger>
-          <TabsTrigger value="lgd-assumptions">Hypothèses LGD</TabsTrigger>
-          <TabsTrigger value="scenarios">Scénarios</TabsTrigger>
+          <TabsTrigger value="general">Généraux</TabsTrigger>
+          <TabsTrigger value="risk">Risque</TabsTrigger>
+          <TabsTrigger value="pricing">Pricing</TabsTrigger>
+          <TabsTrigger value="stress">Scénarios de Stress</TabsTrigger>
         </TabsList>
         
         <TabsContent value="general">
@@ -107,255 +54,210 @@ const Parameters = () => {
             <CardHeader>
               <CardTitle>Paramètres Généraux</CardTitle>
               <CardDescription>
-                Configurez les paramètres globaux pour les calculs financiers.
+                Ces paramètres sont utilisés dans tous les calculs financiers.
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-6">
-                  <div className="space-y-2">
-                    <Label htmlFor="target-roe">ROE Cible</Label>
-                    <div className="flex items-center gap-2">
-                      <Input 
-                        id="target-roe"
-                        type="number" 
-                        step="0.01"
-                        value={params.targetROE} 
-                        onChange={(e) => handleParameterChange('targetROE', parseFloat(e.target.value))}
-                      />
-                      <span className="text-sm text-muted-foreground">
-                        {(params.targetROE * 100).toFixed(2)}%
-                      </span>
-                    </div>
+                <div className="space-y-2">
+                  <Label htmlFor="targetROE">ROE Cible (%)</Label>
+                  <div className="flex items-center space-x-2">
+                    <Slider 
+                      id="targetROE"
+                      min={5} 
+                      max={20} 
+                      step={0.1} 
+                      value={[parameters.targetROE * 100]} 
+                      onValueChange={(values) => setParameters({
+                        ...parameters, 
+                        targetROE: values[0] / 100
+                      })} 
+                      className="flex-1"
+                    />
+                    <span className="w-12 text-center font-mono">
+                      {(parameters.targetROE * 100).toFixed(1)}%
+                    </span>
                   </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="corporate-tax-rate">Taux d'Impôt sur les Sociétés</Label>
-                    <div className="flex items-center gap-2">
-                      <Input 
-                        id="corporate-tax-rate"
-                        type="number" 
-                        step="0.01"
-                        value={params.corporateTaxRate} 
-                        onChange={(e) => handleParameterChange('corporateTaxRate', parseFloat(e.target.value))}
-                      />
-                      <span className="text-sm text-muted-foreground">
-                        {(params.corporateTaxRate * 100).toFixed(2)}%
-                      </span>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="capital-ratio">Ratio de Capital (CET1)</Label>
-                    <div className="flex items-center gap-2">
-                      <Input 
-                        id="capital-ratio"
-                        type="number" 
-                        step="0.01"
-                        value={params.capitalRatio} 
-                        onChange={(e) => handleParameterChange('capitalRatio', parseFloat(e.target.value))}
-                      />
-                      <span className="text-sm text-muted-foreground">
-                        {(params.capitalRatio * 100).toFixed(2)}%
-                      </span>
-                    </div>
-                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Rentabilité minimale exigée par les actionnaires
+                  </p>
                 </div>
                 
-                <div className="space-y-6">
-                  <div className="space-y-2">
-                    <Label htmlFor="funding-cost">Coût de Funding</Label>
-                    <div className="flex items-center gap-2">
-                      <Input 
-                        id="funding-cost"
-                        type="number" 
-                        step="0.001"
-                        value={params.fundingCost} 
-                        onChange={(e) => handleParameterChange('fundingCost', parseFloat(e.target.value))}
-                      />
-                      <span className="text-sm text-muted-foreground">
-                        {(params.fundingCost * 100).toFixed(2)}%
-                      </span>
-                    </div>
+                <div className="space-y-2">
+                  <Label htmlFor="corporateTaxRate">Taux d'Imposition (%)</Label>
+                  <div className="flex items-center space-x-2">
+                    <Slider 
+                      id="corporateTaxRate"
+                      min={10} 
+                      max={40} 
+                      step={0.5} 
+                      value={[parameters.corporateTaxRate * 100]} 
+                      onValueChange={(values) => setParameters({
+                        ...parameters, 
+                        corporateTaxRate: values[0] / 100
+                      })} 
+                      className="flex-1"
+                    />
+                    <span className="w-12 text-center font-mono">
+                      {(parameters.corporateTaxRate * 100).toFixed(1)}%
+                    </span>
                   </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="operational-cost-ratio">Ratio des Coûts Opérationnels</Label>
-                    <div className="flex items-center gap-2">
-                      <Input 
-                        id="operational-cost-ratio"
-                        type="number" 
-                        step="0.001"
-                        value={params.operationalCostRatio} 
-                        onChange={(e) => handleParameterChange('operationalCostRatio', parseFloat(e.target.value))}
-                      />
-                      <span className="text-sm text-muted-foreground">
-                        {(params.operationalCostRatio * 100).toFixed(2)}%
-                      </span>
-                    </div>
+                  <p className="text-xs text-muted-foreground">
+                    Taux d'imposition sur les bénéfices
+                  </p>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="capitalRatio">Ratio de Capital (%)</Label>
+                  <div className="flex items-center space-x-2">
+                    <Slider 
+                      id="capitalRatio"
+                      min={8} 
+                      max={20} 
+                      step={0.1} 
+                      value={[parameters.capitalRatio * 100]} 
+                      onValueChange={(values) => setParameters({
+                        ...parameters, 
+                        capitalRatio: values[0] / 100
+                      })} 
+                      className="flex-1"
+                    />
+                    <span className="w-12 text-center font-mono">
+                      {(parameters.capitalRatio * 100).toFixed(1)}%
+                    </span>
                   </div>
-                  
-                  <div className="flex justify-end mt-8">
-                    <Button 
-                      className="flex items-center gap-2"
-                      onClick={handleSaveParameters}
-                    >
-                      <Save className="h-4 w-4" />
-                      <span>Sauvegarder</span>
-                    </Button>
+                  <p className="text-xs text-muted-foreground">
+                    Ratio CET1 (Common Equity Tier 1)
+                  </p>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="useRegParameters">Utiliser Paramètres Réglementaires</Label>
+                  <div className="flex items-center space-x-2">
+                    <Switch id="useRegParameters" />
+                    <Label htmlFor="useRegParameters">
+                      Activer
+                    </Label>
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    Utiliser les paramètres standards de Bâle III
+                  </p>
                 </div>
               </div>
             </CardContent>
           </Card>
         </TabsContent>
         
-        <TabsContent value="pd-curve">
+        <TabsContent value="risk">
           <Card>
             <CardHeader>
-              <CardTitle>Courbe de PD par Rating</CardTitle>
+              <CardTitle>Paramètres de Risque</CardTitle>
               <CardDescription>
-                Définissez les probabilités de défaut pour chaque note de crédit.
+                Paramètres utilisés dans les calculs de risque et d'expected loss.
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Rating</TableHead>
-                        <TableHead>PD</TableHead>
-                        <TableHead className="w-[50px]"></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {params.pdCurve.map((item, index) => (
-                        <TableRow key={index}>
-                          <TableCell>
-                            <Input 
-                              value={item.rating} 
-                              onChange={(e) => handlePdMappingChange(index, 'rating', e.target.value)} 
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Slider 
-                                min={0} 
-                                max={0.5} 
-                                step={0.001} 
-                                value={[item.pd]} 
-                                onValueChange={(values) => handlePdMappingChange(index, 'pd', values[0])} 
-                              />
-                              <span className="text-sm w-16 text-right">
-                                {(item.pd * 100).toFixed(2)}%
-                              </span>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              onClick={() => handleRemovePdMapping(index)}
-                            >
-                              <Trash2 className="h-4 w-4 text-red-500" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                  
-                  <Button 
-                    variant="outline" 
-                    className="mt-4 flex items-center gap-2"
-                    onClick={handleAddPdMapping}
-                  >
-                    <PlusCircle className="h-4 w-4" />
-                    <span>Ajouter un Rating</span>
-                  </Button>
+                <div className="space-y-2">
+                  <Label htmlFor="fundingCost">Coût de Funding (%)</Label>
+                  <div className="flex items-center space-x-2">
+                    <Slider 
+                      id="fundingCost"
+                      min={0} 
+                      max={10} 
+                      step={0.05} 
+                      value={[parameters.fundingCost * 100]} 
+                      onValueChange={(values) => setParameters({
+                        ...parameters, 
+                        fundingCost: values[0] / 100
+                      })} 
+                      className="flex-1"
+                    />
+                    <span className="w-12 text-center font-mono">
+                      {(parameters.fundingCost * 100).toFixed(2)}%
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Coût moyen de refinancement
+                  </p>
                 </div>
                 
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={pdCurveData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="rating" />
-                      <YAxis unit="%" />
-                      <Tooltip formatter={(value) => `${value.toFixed(2)}%`} />
-                      <Legend />
-                      <Line 
-                        type="monotone" 
-                        dataKey="pd" 
-                        stroke="#FF3B5B" 
-                        name="PD (%)" 
-                        activeDot={{ r: 8 }} 
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
+                <div className="space-y-2">
+                  <Label htmlFor="operationalCostRatio">Coûts Opérationnels (%)</Label>
+                  <div className="flex items-center space-x-2">
+                    <Slider 
+                      id="operationalCostRatio"
+                      min={0} 
+                      max={5} 
+                      step={0.05} 
+                      value={[parameters.operationalCostRatio * 100]} 
+                      onValueChange={(values) => setParameters({
+                        ...parameters, 
+                        operationalCostRatio: values[0] / 100
+                      })} 
+                      className="flex-1"
+                    />
+                    <span className="w-12 text-center font-mono">
+                      {(parameters.operationalCostRatio * 100).toFixed(2)}%
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Ratio de coûts opérationnels en % du montant du prêt
+                  </p>
                 </div>
               </div>
               
-              <div className="flex justify-end mt-4">
-                <Button 
-                  className="flex items-center gap-2"
-                  onClick={handleSaveParameters}
-                >
-                  <Save className="h-4 w-4" />
-                  <span>Sauvegarder</span>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        
-        <TabsContent value="lgd-assumptions">
-          <Card>
-            <CardHeader>
-              <CardTitle>Hypothèses LGD par Secteur</CardTitle>
-              <CardDescription>
-                Définissez les LGD (Loss Given Default) par secteur économique.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+              <h3 className="text-lg font-medium mt-4">PD par Notation</h3>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Secteur</TableHead>
-                    <TableHead>LGD</TableHead>
-                    <TableHead className="w-[50px]"></TableHead>
+                    <TableHead>Notation</TableHead>
+                    <TableHead className="text-right">PD</TableHead>
+                    <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {params.lgdAssumptions.map((item, index) => (
+                  {parameters.pdCurve.map((rating, index) => (
                     <TableRow key={index}>
                       <TableCell>
                         <Input 
-                          value={item.sector} 
-                          onChange={(e) => handleLgdMappingChange(index, 'sector', e.target.value)} 
+                          value={rating.rating} 
+                          onChange={(e) => {
+                            const newPdCurve = [...parameters.pdCurve];
+                            newPdCurve[index].rating = e.target.value;
+                            setParameters({...parameters, pdCurve: newPdCurve});
+                          }}
                         />
                       </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end space-x-2">
                           <Slider 
-                            min={0} 
-                            max={1} 
-                            step={0.01} 
-                            value={[item.lgd]} 
-                            onValueChange={(values) => handleLgdMappingChange(index, 'lgd', values[0])} 
+                            min={0.0001} 
+                            max={0.3} 
+                            step={0.0001} 
+                            value={[rating.pd]} 
+                            onValueChange={(values) => {
+                              const newPdCurve = [...parameters.pdCurve];
+                              newPdCurve[index].pd = values[0];
+                              setParameters({...parameters, pdCurve: newPdCurve});
+                            }} 
+                            className="w-32"
                           />
-                          <span className="text-sm w-16 text-right">
-                            {(item.lgd * 100).toFixed(0)}%
+                          <span className="w-16 text-right font-mono">
+                            {typeof rating.pd === 'number' ? (rating.pd * 100).toFixed(2) + '%' : '0.00%'}
                           </span>
                         </div>
                       </TableCell>
                       <TableCell>
                         <Button 
                           variant="ghost" 
-                          size="icon" 
-                          onClick={() => handleRemoveLgdMapping(index)}
+                          size="sm"
+                          onClick={() => {
+                            const newPdCurve = parameters.pdCurve.filter((_, i) => i !== index);
+                            setParameters({...parameters, pdCurve: newPdCurve});
+                          }}
                         >
-                          <Trash2 className="h-4 w-4 text-red-500" />
+                          Supprimer
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -363,32 +265,80 @@ const Parameters = () => {
                 </TableBody>
               </Table>
               
-              <div className="flex justify-between mt-4">
-                <Button 
-                  variant="outline" 
-                  className="flex items-center gap-2"
-                  onClick={handleAddLgdMapping}
-                >
-                  <PlusCircle className="h-4 w-4" />
-                  <span>Ajouter un Secteur</span>
-                </Button>
+              <Button 
+                onClick={() => {
+                  const newPdCurve = [...parameters.pdCurve, { rating: 'New Rating', pd: 0.01 }];
+                  setParameters({...parameters, pdCurve: newPdCurve});
+                }}
+              >
+                Ajouter une Notation
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        
+        <TabsContent value="pricing">
+          <Card>
+            <CardHeader>
+              <CardTitle>Pricing</CardTitle>
+              <CardDescription>
+                Paramètres utilisés dans les calculs de pricing.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label htmlFor="priceFactor">Facteur de Pricing</Label>
+                  <div className="flex items-center space-x-2">
+                    <Input 
+                      id="priceFactor"
+                      type="number" 
+                      step="0.01"
+                      value={parameters.priceFactor} 
+                      onChange={(e) => setParameters({
+                        ...parameters, 
+                        priceFactor: parseFloat(e.target.value)
+                      })}
+                    />
+                    <span className="text-sm text-muted-foreground">
+                      {(parameters.priceFactor * 100).toFixed(2)}%
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Facteur de pricing pour les produits financiers
+                  </p>
+                </div>
                 
-                <Button 
-                  className="flex items-center gap-2"
-                  onClick={handleSaveParameters}
-                >
-                  <Save className="h-4 w-4" />
-                  <span>Sauvegarder</span>
-                </Button>
+                <div className="space-y-2">
+                  <Label htmlFor="spread">Spread (%)</Label>
+                  <div className="flex items-center space-x-2">
+                    <Input 
+                      id="spread"
+                      type="number" 
+                      step="0.01"
+                      value={parameters.spread} 
+                      onChange={(e) => setParameters({
+                        ...parameters, 
+                        spread: parseFloat(e.target.value)
+                      })}
+                    />
+                    <span className="text-sm text-muted-foreground">
+                      {(parameters.spread * 100).toFixed(2)}%
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Spreads pour les produits financiers
+                  </p>
+                </div>
               </div>
             </CardContent>
           </Card>
         </TabsContent>
         
-        <TabsContent value="scenarios">
+        <TabsContent value="stress">
           <Card>
             <CardHeader>
-              <CardTitle>Scénarios de Stress Test</CardTitle>
+              <CardTitle>Scénarios de Stress</CardTitle>
               <CardDescription>
                 Configurez des scénarios prédéfinis pour les analyses de sensibilité.
               </CardDescription>
@@ -406,7 +356,7 @@ const Parameters = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {params.stressScenarios.map((scenario, index) => (
+                  {parameters.stressScenarios.map((scenario, index) => (
                     <TableRow key={index}>
                       <TableCell>{scenario.name}</TableCell>
                       <TableCell>{scenario.pdMultiplier.toFixed(2)}x</TableCell>
@@ -444,6 +394,15 @@ const Parameters = () => {
           </Card>
         </TabsContent>
       </Tabs>
+      
+      <div className="flex justify-end space-x-2">
+        <Button variant="outline" onClick={handleResetToDefault}>
+          Restaurer les Valeurs par Défaut
+        </Button>
+        <Button onClick={handleSaveParameters}>
+          Enregistrer les Paramètres
+        </Button>
+      </div>
     </div>
   );
 };
