@@ -164,9 +164,9 @@ const Documentation = () => {
               
               <h3 className="text-lg font-semibold mt-4 mb-2">Interprétation</h3>
               <ul className="list-disc list-inside space-y-1">
-                <li>RAROC > ROE Cible : Le prêt crée de la valeur économique</li>
+                <li>RAROC {">"} ROE Cible : Le prêt crée de la valeur économique</li>
                 <li>RAROC = ROE Cible : Le prêt couvre exactement le coût du capital</li>
-                <li>RAROC < ROE Cible : Le prêt détruit de la valeur économique</li>
+                <li>RAROC {"<"} ROE Cible : Le prêt détruit de la valeur économique</li>
               </ul>
             </CardContent>
           </Card>
