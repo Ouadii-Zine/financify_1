@@ -24,12 +24,18 @@ export const calculateRWA = (loan: Loan, params: CalculationParameters): number 
 export const calculateROE = (loan: Loan, params: CalculationParameters): number => {
   const rwa = calculateRWA(loan, params);
   const capitalRequired = rwa * params.capitalRatio;
-  const annualIncome = (loan.margin + loan.referenceRate) * loan.drawnAmount +
-                       loan.fees.commitment * loan.undrawnAmount +
-                       (loan.fees.upfront + loan.fees.agency + loan.fees.other) / 
-                       ((loan.endDate ? new Date(loan.endDate).getTime() : 0) - 
-                       (loan.startDate ? new Date(loan.startDate).getTime() : 0)) * 
-                       (365 * 24 * 60 * 60 * 1000);
+  
+  // Calcul correct du revenu annuel en tenant compte de la durée du prêt en années
+  const loanDurationMs = (loan.endDate ? new Date(loan.endDate).getTime() : 0) - 
+                         (loan.startDate ? new Date(loan.startDate).getTime() : 0);
+  const loanDurationYears = loanDurationMs / (365 * 24 * 60 * 60 * 1000);
+  
+  const annualInterestIncome = (loan.margin + loan.referenceRate) * loan.drawnAmount;
+  const annualCommitmentFee = loan.fees.commitment * loan.undrawnAmount;
+  const upfrontFeesAmortized = (loan.fees.upfront + loan.fees.agency + loan.fees.other) / 
+                              Math.max(loanDurationYears, 1); // Éviter division par zéro
+  
+  const annualIncome = annualInterestIncome + annualCommitmentFee + upfrontFeesAmortized;
   
   const fundingCost = params.fundingCost * loan.drawnAmount;
   const operationalCost = params.operationalCostRatio * loan.originalAmount;
@@ -63,12 +69,18 @@ export const calculateEVASale = (loan: Loan, params: CalculationParameters, sale
 export const calculateRAROC = (loan: Loan, params: CalculationParameters): number => {
   const rwa = calculateRWA(loan, params);
   const capitalRequired = rwa * params.capitalRatio;
-  const annualIncome = (loan.margin + loan.referenceRate) * loan.drawnAmount +
-                       loan.fees.commitment * loan.undrawnAmount +
-                       (loan.fees.upfront + loan.fees.agency + loan.fees.other) / 
-                       ((loan.endDate ? new Date(loan.endDate).getTime() : 0) - 
-                       (loan.startDate ? new Date(loan.startDate).getTime() : 0)) * 
-                       (365 * 24 * 60 * 60 * 1000);
+  
+  // Utilisation de la même logique que pour le calcul du ROE mais avant impôts
+  const loanDurationMs = (loan.endDate ? new Date(loan.endDate).getTime() : 0) - 
+                         (loan.startDate ? new Date(loan.startDate).getTime() : 0);
+  const loanDurationYears = loanDurationMs / (365 * 24 * 60 * 60 * 1000);
+  
+  const annualInterestIncome = (loan.margin + loan.referenceRate) * loan.drawnAmount;
+  const annualCommitmentFee = loan.fees.commitment * loan.undrawnAmount;
+  const upfrontFeesAmortized = (loan.fees.upfront + loan.fees.agency + loan.fees.other) / 
+                              Math.max(loanDurationYears, 1);
+  
+  const annualIncome = annualInterestIncome + annualCommitmentFee + upfrontFeesAmortized;
   
   const fundingCost = params.fundingCost * loan.drawnAmount;
   const operationalCost = params.operationalCostRatio * loan.originalAmount;
@@ -89,14 +101,18 @@ export const calculateLoanMetrics = (loan: Loan, params: CalculationParameters):
   const evaSale = calculateEVASale(loan, params);
   
   const capitalConsumption = rwa * params.capitalRatio;
-  const costOfRisk = expectedLoss / loan.drawnAmount;
+  const costOfRisk = expectedLoss / (loan.drawnAmount || 1); // Éviter division par zéro
   const netMargin = loan.margin - (params.fundingCost + params.operationalCostRatio + costOfRisk);
+  
+  // Calcul correct du yield effectif
+  const loanDurationMs = (loan.endDate ? new Date(loan.endDate).getTime() : 0) - 
+                         (loan.startDate ? new Date(loan.startDate).getTime() : 0);
+  const loanDurationYears = loanDurationMs / (365 * 24 * 60 * 60 * 1000);
+  
+  const feesPerYear = (loan.fees.upfront + loan.fees.agency + loan.fees.other) / 
+                     Math.max(loanDurationYears, 1);
   const effectiveYield = (loan.margin + loan.referenceRate) + 
-                         (loan.fees.upfront + loan.fees.agency + loan.fees.other) / 
-                         (loan.drawnAmount * 
-                         ((loan.endDate ? new Date(loan.endDate).getTime() : 0) - 
-                         (loan.startDate ? new Date(loan.startDate).getTime() : 0)) * 
-                         (365 * 24 * 60 * 60 * 1000));
+                         (feesPerYear / (loan.drawnAmount || 1));
   
   return {
     evaIntrinsic,
@@ -114,36 +130,43 @@ export const calculateLoanMetrics = (loan: Loan, params: CalculationParameters):
 
 // Calcul des métriques d'un portefeuille
 export const calculatePortfolioMetrics = (loans: Loan[], params: CalculationParameters): PortfolioMetrics => {
-  const totalExposure = loans.reduce((sum, loan) => sum + loan.originalAmount, 0);
-  const totalDrawn = loans.reduce((sum, loan) => sum + loan.drawnAmount, 0);
-  const totalUndrawn = loans.reduce((sum, loan) => sum + loan.undrawnAmount, 0);
+  // Filtrer les prêts avec montant nul pour éviter les erreurs de calcul
+  const validLoans = loans.filter(loan => loan.originalAmount > 0);
   
-  // Weighted averages
+  const totalExposure = validLoans.reduce((sum, loan) => sum + loan.originalAmount, 0);
+  const totalDrawn = validLoans.reduce((sum, loan) => sum + loan.drawnAmount, 0);
+  const totalUndrawn = validLoans.reduce((sum, loan) => sum + loan.undrawnAmount, 0);
+  
+  // Moyennes pondérées
   const weightedAveragePD = totalExposure > 0 
-    ? loans.reduce((sum, loan) => sum + (loan.pd * loan.originalAmount), 0) / totalExposure 
+    ? validLoans.reduce((sum, loan) => sum + (loan.pd * loan.originalAmount), 0) / totalExposure 
     : 0;
     
   const weightedAverageLGD = totalExposure > 0 
-    ? loans.reduce((sum, loan) => sum + (loan.lgd * loan.originalAmount), 0) / totalExposure 
+    ? validLoans.reduce((sum, loan) => sum + (loan.lgd * loan.originalAmount), 0) / totalExposure 
     : 0;
   
-  const totalExpectedLoss = loans.reduce((sum, loan) => sum + calculateExpectedLoss(loan), 0);
-  const totalRWA = loans.reduce((sum, loan) => sum + calculateRWA(loan, params), 0);
+  const totalExpectedLoss = validLoans.reduce((sum, loan) => sum + calculateExpectedLoss(loan), 0);
+  const totalRWA = validLoans.reduce((sum, loan) => sum + calculateRWA(loan, params), 0);
   
   const totalCapitalRequired = totalRWA * params.capitalRatio;
   
-  // Calculate total income and costs for the portfolio
-  const totalAnnualIncome = loans.reduce((sum, loan) => {
-    return sum + (loan.margin + loan.referenceRate) * loan.drawnAmount +
-           loan.fees.commitment * loan.undrawnAmount +
-           (loan.fees.upfront + loan.fees.agency + loan.fees.other) / 
-           ((loan.endDate ? new Date(loan.endDate).getTime() : 0) - 
-           (loan.startDate ? new Date(loan.startDate).getTime() : 0)) * 
-           (365 * 24 * 60 * 60 * 1000);
+  // Calcul des revenus et coûts totaux du portefeuille
+  const totalAnnualIncome = validLoans.reduce((sum, loan) => {
+    const loanDurationMs = (loan.endDate ? new Date(loan.endDate).getTime() : 0) - 
+                          (loan.startDate ? new Date(loan.startDate).getTime() : 0);
+    const loanDurationYears = loanDurationMs / (365 * 24 * 60 * 60 * 1000);
+    
+    const annualInterestIncome = (loan.margin + loan.referenceRate) * loan.drawnAmount;
+    const annualCommitmentFee = loan.fees.commitment * loan.undrawnAmount;
+    const upfrontFeesAmortized = (loan.fees.upfront + loan.fees.agency + loan.fees.other) / 
+                                Math.max(loanDurationYears, 1);
+    
+    return sum + annualInterestIncome + annualCommitmentFee + upfrontFeesAmortized;
   }, 0);
   
-  const totalFundingCost = loans.reduce((sum, loan) => sum + params.fundingCost * loan.drawnAmount, 0);
-  const totalOperationalCost = loans.reduce((sum, loan) => sum + params.operationalCostRatio * loan.originalAmount, 0);
+  const totalFundingCost = validLoans.reduce((sum, loan) => sum + params.fundingCost * loan.drawnAmount, 0);
+  const totalOperationalCost = validLoans.reduce((sum, loan) => sum + params.operationalCostRatio * loan.originalAmount, 0);
   
   const portfolioProfitBeforeTax = totalAnnualIncome - totalFundingCost - totalOperationalCost - totalExpectedLoss;
   const portfolioProfitAfterTax = portfolioProfitBeforeTax * (1 - params.corporateTaxRate);
@@ -151,16 +174,16 @@ export const calculatePortfolioMetrics = (loans: Loan[], params: CalculationPara
   const portfolioROE = totalCapitalRequired > 0 ? portfolioProfitAfterTax / totalCapitalRequired : 0;
   const portfolioRAROC = totalCapitalRequired > 0 ? portfolioProfitBeforeTax / totalCapitalRequired : 0;
   
-  // Calculate EVA sums
-  const evaSumIntrinsic = loans.reduce((sum, loan) => sum + calculateEVAIntrinsic(loan, params), 0);
-  const evaSumSale = loans.reduce((sum, loan) => sum + calculateEVASale(loan, params), 0);
+  // Calcul des sommes EVA
+  const evaSumIntrinsic = validLoans.reduce((sum, loan) => sum + calculateEVAIntrinsic(loan, params), 0);
+  const evaSumSale = validLoans.reduce((sum, loan) => sum + calculateEVASale(loan, params), 0);
   
-  // Calculate diversification benefit
-  // Simplified approach: assuming perfect correlation would equal sum of individual ELs
-  // Any reduction is the diversification benefit
+  // Calcul du bénéfice de diversification
+  // Approche simplifiée: une corrélation parfaite serait égale à la somme des EL individuels
+  // Toute réduction est le bénéfice de diversification
   const perfectCorrelationEL = totalExpectedLoss;
-  // In reality, you would use a correlation matrix between loans
-  // For now, we'll use a simple 20% reduction as a placeholder
+  // En réalité, vous utiliseriez une matrice de corrélation entre les prêts
+  // Pour l'instant, nous utiliserons une réduction simple de 20 % comme espace réservé
   const diversificationBenefit = perfectCorrelationEL * 0.2;
   
   return {

@@ -2,24 +2,64 @@
 import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { PieChart, LineChart, BarChart, ComposedChart, ResponsiveContainer, Pie, Cell, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Bar, Area } from 'recharts';
-import { TrendingUp, TrendingDown, DollarSign, AlertTriangle, CreditCard, BadgePercent, BarChart3, UserCheck } from 'lucide-react';
+import { 
+  PieChart, 
+  LineChart, 
+  BarChart, 
+  ComposedChart, 
+  ResponsiveContainer, 
+  Pie, 
+  Cell, 
+  Line, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  Legend, 
+  Bar, 
+  Area 
+} from 'recharts';
+import { 
+  TrendingUp, 
+  TrendingDown, 
+  DollarSign, 
+  AlertTriangle, 
+  CreditCard, 
+  BadgePercent, 
+  BarChart3, 
+  UserCheck 
+} from 'lucide-react';
 import { samplePortfolio, defaultCalculationParameters } from '../data/sampleData';
-import { calculatePortfolioMetrics } from '../utils/financialCalculations';
+import { calculatePortfolioMetrics, calculateLoanMetrics } from '../utils/financialCalculations';
+import { Loan } from '../types/finance';
 
 const COLORS = ['#00C48C', '#2D5BFF', '#FFB800', '#FF3B5B', '#1A2C42'];
 
 const Dashboard = () => {
-  const [portfolioMetrics, setPortfolioMetrics] = useState(samplePortfolio.metrics);
+  const [portfolio, setPortfolio] = useState(samplePortfolio);
+  const [portfolioMetrics, setPortfolioMetrics] = useState(portfolio.metrics);
   
   useEffect(() => {
-    // Calculer les métriques du portefeuille
-    const metrics = calculatePortfolioMetrics(samplePortfolio.loans, defaultCalculationParameters);
-    setPortfolioMetrics(metrics);
+    // Calculer les métriques pour chaque prêt
+    const updatedLoans = portfolio.loans.map(loan => {
+      const metrics = calculateLoanMetrics(loan, defaultCalculationParameters);
+      return { ...loan, metrics };
+    });
+    
+    // Mettre à jour les métriques du portefeuille
+    const updatedMetrics = calculatePortfolioMetrics(updatedLoans, defaultCalculationParameters);
+    
+    setPortfolio({
+      ...portfolio,
+      loans: updatedLoans,
+      metrics: updatedMetrics
+    });
+    
+    setPortfolioMetrics(updatedMetrics);
   }, []);
   
   // Données pour le graphique de répartition des expositions par secteur
-  const sectorData = samplePortfolio.loans.reduce((acc, loan) => {
+  const sectorData = portfolio.loans.reduce((acc, loan) => {
     const existingSector = acc.find(item => item.name === loan.sector);
     if (existingSector) {
       existingSector.value += loan.originalAmount;
@@ -48,15 +88,24 @@ const Dashboard = () => {
   ];
   
   // Données pour le graphique des Top 5 prêts par EVA
-  const topLoansByEva = samplePortfolio.loans
+  const topLoansByEva = portfolio.loans
     .slice()
-    .sort((a, b) => b.metrics.evaIntrinsic - a.metrics.evaIntrinsic)
+    .sort((a, b) => (b.metrics?.evaIntrinsic || 0) - (a.metrics?.evaIntrinsic || 0))
     .slice(0, 5)
     .map(loan => ({
       name: loan.name,
-      eva: loan.metrics.evaIntrinsic,
-      roe: loan.metrics.roe * 100
+      eva: loan.metrics?.evaIntrinsic || 0,
+      roe: (loan.metrics?.roe || 0) * 100
     }));
+  
+  // Formatter pour afficher les montants en euros
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('fr-FR', { 
+      style: 'currency', 
+      currency: 'EUR', 
+      maximumFractionDigits: 0 
+    }).format(value);
+  };
   
   return (
     <div className="dashboard-grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -70,10 +119,10 @@ const Dashboard = () => {
         </CardHeader>
         <CardContent>
           <div className="text-3xl font-bold">
-            {new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(portfolioMetrics.totalExposure)}
+            {formatCurrency(portfolioMetrics.totalExposure)}
           </div>
           <p className="text-sm text-muted-foreground mt-1">
-            Tiré: {new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(portfolioMetrics.totalDrawn)}
+            Tiré: {formatCurrency(portfolioMetrics.totalDrawn)}
           </p>
         </CardContent>
       </Card>
@@ -109,7 +158,7 @@ const Dashboard = () => {
         </CardHeader>
         <CardContent>
           <div className="text-3xl font-bold">
-            {new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(portfolioMetrics.totalExpectedLoss)}
+            {formatCurrency(portfolioMetrics.totalExpectedLoss)}
           </div>
           <p className="text-sm text-muted-foreground mt-1">
             {((portfolioMetrics.totalExpectedLoss / portfolioMetrics.totalExposure) * 100).toFixed(2)}% du portefeuille

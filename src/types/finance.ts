@@ -85,6 +85,8 @@ export interface CalculationParameters {
   capitalRatio: number; // Common Equity Tier 1 ratio
   fundingCost: number;
   operationalCostRatio: number;
+  priceFactor?: number; // Facteur de pricing
+  spread?: number; // Spread par défaut
   pdCurve: { rating: string; pd: number }[];
   lgdAssumptions: { sector: string; lgd: number }[];
   stressScenarios: {

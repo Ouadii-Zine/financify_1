@@ -1,22 +1,9 @@
-
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { 
-  Download, 
-  FileSpreadsheet, 
-  FileText,
-  RefreshCw, 
-  Clock, 
-  Calendar,
-  PrinterIcon,
-  Eye
-} from 'lucide-react';
-import { toast } from '@/hooks/use-toast';
-import { samplePortfolio } from '@/data/sampleData';
 import { 
   Table, 
   TableBody, 
@@ -25,23 +12,53 @@ import {
   TableHeader, 
   TableRow 
 } from '@/components/ui/table';
+import { 
+  Download, 
+  FileSpreadsheet, 
+  FileText,
+  RefreshCw, 
+  Clock, 
+  Calendar,
+  Printer,
+  Eye,
+  FilePdf
+} from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
+import { samplePortfolio } from '@/data/sampleData';
+import ExcelTemplateService from '@/services/ExcelTemplateService';
 
 const Reports = () => {
   const [isGenerating, setIsGenerating] = useState(false);
+  const [selectedFormats, setSelectedFormats] = useState({
+    performance: { excel: true, pdf: false },
+    eva: { excel: true, pdf: false },
+    dashboard: { pdf: true },
+    risk: { excel: true, pdf: false },
+    liquidity: { excel: true, pdf: false },
+    credit: { excel: true, pdf: false }
+  });
+  
+  const handleCheckboxChange = (reportType: string, format: string) => {
+    setSelectedFormats(prev => ({
+      ...prev,
+      [reportType]: {
+        ...prev[reportType as keyof typeof prev],
+        [format]: !prev[reportType as keyof typeof prev][format as keyof typeof prev[keyof typeof prev]]
+      }
+    }));
+  };
   
   const handleGenerateReport = (reportType: string) => {
     setIsGenerating(true);
     
-    // Simuler un délai de génération
+    const formats = selectedFormats[reportType as keyof typeof selectedFormats];
+    const selectedFormat = formats.excel ? 'excel' : formats.pdf ? 'pdf' : 'excel';
+    
+    // Utiliser le service d'export pour générer le rapport
     setTimeout(() => {
+      ExcelTemplateService.exportData(samplePortfolio, reportType, selectedFormat as 'excel' | 'pdf' | 'csv');
       setIsGenerating(false);
-      
-      toast({
-        title: "Rapport généré",
-        description: `Le rapport ${reportType} a été généré avec succès.`,
-        variant: "default"
-      });
-    }, 2000);
+    }, 1000);
   };
   
   return (
@@ -79,10 +96,18 @@ const Reports = () => {
                     </div>
                     <div className="mt-auto pt-4 flex items-center justify-between">
                       <div className="flex items-center space-x-2">
-                        <Checkbox id="excel-performance" />
+                        <Checkbox 
+                          id="excel-performance" 
+                          checked={selectedFormats.performance.excel}
+                          onCheckedChange={() => handleCheckboxChange('performance', 'excel')}
+                        />
                         <Label htmlFor="excel-performance" className="text-sm">Excel</Label>
                         
-                        <Checkbox id="pdf-performance" />
+                        <Checkbox 
+                          id="pdf-performance" 
+                          checked={selectedFormats.performance.pdf}
+                          onCheckedChange={() => handleCheckboxChange('performance', 'pdf')}
+                        />
                         <Label htmlFor="pdf-performance" className="text-sm">PDF</Label>
                       </div>
                       <Button 
@@ -119,10 +144,18 @@ const Reports = () => {
                     </div>
                     <div className="mt-auto pt-4 flex items-center justify-between">
                       <div className="flex items-center space-x-2">
-                        <Checkbox id="excel-eva" />
+                        <Checkbox 
+                          id="excel-eva" 
+                          checked={selectedFormats.eva.excel}
+                          onCheckedChange={() => handleCheckboxChange('eva', 'excel')}
+                        />
                         <Label htmlFor="excel-eva" className="text-sm">Excel</Label>
                         
-                        <Checkbox id="pdf-eva" />
+                        <Checkbox 
+                          id="pdf-eva" 
+                          checked={selectedFormats.eva.pdf}
+                          onCheckedChange={() => handleCheckboxChange('eva', 'pdf')}
+                        />
                         <Label htmlFor="pdf-eva" className="text-sm">PDF</Label>
                       </div>
                       <Button 
@@ -149,7 +182,7 @@ const Reports = () => {
                 <Card className="p-4">
                   <div className="flex flex-col h-full">
                     <div className="flex items-start gap-3 mb-4">
-                      <FileText className="h-8 w-8 text-red-500" />
+                      <FilePdf className="h-8 w-8 text-red-500" />
                       <div>
                         <h3 className="font-medium">Dashboard Exécutif</h3>
                         <p className="text-sm text-muted-foreground">
@@ -159,12 +192,16 @@ const Reports = () => {
                     </div>
                     <div className="mt-auto pt-4 flex items-center justify-between">
                       <div className="flex items-center space-x-2">
-                        <Checkbox id="pdf-dashboard" checked disabled />
+                        <Checkbox 
+                          id="pdf-dashboard" 
+                          checked={selectedFormats.dashboard.pdf}
+                          onCheckedChange={() => handleCheckboxChange('dashboard', 'pdf')}
+                        />
                         <Label htmlFor="pdf-dashboard" className="text-sm">PDF</Label>
                       </div>
                       <Button 
                         size="sm" 
-                        onClick={() => handleGenerateReport('Dashboard Exécutif')}
+                        onClick={() => handleGenerateReport('Dashboard')}
                         disabled={isGenerating}
                       >
                         {isGenerating ? (
@@ -202,7 +239,7 @@ const Reports = () => {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-muted-foreground">15/04/2025</span>
-                    <Button size="sm" variant="ghost">
+                    <Button size="sm" variant="ghost" onClick={() => ExcelTemplateService.exportData(samplePortfolio, 'Dashboard', 'pdf')}>
                       <Download className="h-4 w-4" />
                     </Button>
                   </div>
@@ -215,7 +252,7 @@ const Reports = () => {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-muted-foreground">05/04/2025</span>
-                    <Button size="sm" variant="ghost">
+                    <Button size="sm" variant="ghost" onClick={() => ExcelTemplateService.exportData(samplePortfolio, 'EVA', 'excel')}>
                       <Download className="h-4 w-4" />
                     </Button>
                   </div>
@@ -228,7 +265,7 @@ const Reports = () => {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-muted-foreground">10/03/2025</span>
-                    <Button size="sm" variant="ghost">
+                    <Button size="sm" variant="ghost" onClick={() => ExcelTemplateService.exportData(samplePortfolio, 'Performance', 'excel')}>
                       <Download className="h-4 w-4" />
                     </Button>
                   </div>
@@ -261,10 +298,18 @@ const Reports = () => {
                     </div>
                     <div className="mt-auto pt-4 flex items-center justify-between">
                       <div className="flex items-center space-x-2">
-                        <Checkbox id="excel-risk" />
+                        <Checkbox 
+                          id="excel-risk" 
+                          checked={selectedFormats.risk.excel}
+                          onCheckedChange={() => handleCheckboxChange('risk', 'excel')}
+                        />
                         <Label htmlFor="excel-risk" className="text-sm">Excel</Label>
                         
-                        <Checkbox id="pdf-risk" />
+                        <Checkbox 
+                          id="pdf-risk" 
+                          checked={selectedFormats.risk.pdf}
+                          onCheckedChange={() => handleCheckboxChange('risk', 'pdf')}
+                        />
                         <Label htmlFor="pdf-risk" className="text-sm">PDF</Label>
                       </div>
                       <Button 
@@ -301,10 +346,18 @@ const Reports = () => {
                     </div>
                     <div className="mt-auto pt-4 flex items-center justify-between">
                       <div className="flex items-center space-x-2">
-                        <Checkbox id="excel-liquidity" />
+                        <Checkbox 
+                          id="excel-liquidity" 
+                          checked={selectedFormats.liquidity.excel}
+                          onCheckedChange={() => handleCheckboxChange('liquidity', 'excel')}
+                        />
                         <Label htmlFor="excel-liquidity" className="text-sm">Excel</Label>
                         
-                        <Checkbox id="pdf-liquidity" />
+                        <Checkbox 
+                          id="pdf-liquidity" 
+                          checked={selectedFormats.liquidity.pdf}
+                          onCheckedChange={() => handleCheckboxChange('liquidity', 'pdf')}
+                        />
                         <Label htmlFor="pdf-liquidity" className="text-sm">PDF</Label>
                       </div>
                       <Button 
@@ -341,10 +394,18 @@ const Reports = () => {
                     </div>
                     <div className="mt-auto pt-4 flex items-center justify-between">
                       <div className="flex items-center space-x-2">
-                        <Checkbox id="excel-credit" />
+                        <Checkbox 
+                          id="excel-credit" 
+                          checked={selectedFormats.credit.excel}
+                          onCheckedChange={() => handleCheckboxChange('credit', 'excel')}
+                        />
                         <Label htmlFor="excel-credit" className="text-sm">Excel</Label>
                         
-                        <Checkbox id="pdf-credit" />
+                        <Checkbox 
+                          id="pdf-credit" 
+                          checked={selectedFormats.credit.pdf}
+                          onCheckedChange={() => handleCheckboxChange('credit', 'pdf')}
+                        />
                         <Label htmlFor="pdf-credit" className="text-sm">PDF</Label>
                       </div>
                       <Button 
@@ -404,7 +465,7 @@ const Reports = () => {
                         </Button>
                         <Button 
                           size="sm"
-                          onClick={() => handleGenerateReport('COREP')}
+                          onClick={() => ExcelTemplateService.exportData(samplePortfolio, 'Réglementaire', 'excel')}
                         >
                           <FileText className="h-4 w-4" />
                         </Button>
@@ -423,7 +484,7 @@ const Reports = () => {
                         </Button>
                         <Button 
                           size="sm"
-                          onClick={() => handleGenerateReport('FINREP')}
+                          onClick={() => ExcelTemplateService.exportData(samplePortfolio, 'Réglementaire', 'excel')}
                         >
                           <FileText className="h-4 w-4" />
                         </Button>
@@ -442,7 +503,7 @@ const Reports = () => {
                         </Button>
                         <Button 
                           size="sm"
-                          onClick={() => handleGenerateReport('Grands Risques')}
+                          onClick={() => ExcelTemplateService.exportData(samplePortfolio, 'Réglementaire', 'excel')}
                         >
                           <FileText className="h-4 w-4" />
                         </Button>
@@ -461,7 +522,7 @@ const Reports = () => {
                         </Button>
                         <Button 
                           size="sm"
-                          onClick={() => handleGenerateReport('Liquidité')}
+                          onClick={() => ExcelTemplateService.exportData(samplePortfolio, 'Réglementaire', 'excel')}
                         >
                           <FileText className="h-4 w-4" />
                         </Button>
@@ -506,7 +567,10 @@ const Reports = () => {
                         <Button size="sm" variant="outline">
                           <Eye className="h-4 w-4" />
                         </Button>
-                        <Button size="sm">
+                        <Button 
+                          size="sm"
+                          onClick={() => ExcelTemplateService.exportData(samplePortfolio, 'Dashboard', 'pdf')}
+                        >
                           <FileText className="h-4 w-4" />
                         </Button>
                       </div>
@@ -560,8 +624,9 @@ const Reports = () => {
                 
                 <Button 
                   className="flex items-center gap-2"
+                  onClick={() => ExcelTemplateService.exportData(samplePortfolio, 'Planning', 'pdf')}
                 >
-                  <PrinterIcon className="h-4 w-4" />
+                  <Printer className="h-4 w-4" />
                   <span>Imprimer la planification</span>
                 </Button>
               </div>

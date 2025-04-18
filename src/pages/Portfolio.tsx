@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -45,13 +44,15 @@ import {
   Plus,
   Upload
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { toast } from '@/hooks/use-toast';
+import ExcelTemplateService from '@/services/ExcelTemplateService';
 
 // Couleurs pour les graphiques
 const COLORS = ['#00C48C', '#2D5BFF', '#FFB800', '#FF3B5B', '#1A2C42', '#9B87F5', '#7E69AB'];
 
 const Portfolio = () => {
+  const navigate = useNavigate();
   const [loans, setLoans] = useState<Loan[]>(samplePortfolio.loans);
   const [portfolioMetrics, setPortfolioMetrics] = useState(calculatePortfolioMetrics(loans, defaultCalculationParameters));
   
@@ -110,7 +111,7 @@ const Portfolio = () => {
   
   // Gestionnaires d'événements pour les boutons
   const handleImport = () => {
-    window.location.href = '/import';
+    navigate('/import');
   };
   
   const handleExport = () => {
@@ -120,28 +121,12 @@ const Portfolio = () => {
       variant: "default"
     });
     
-    // Simuler un délai pour l'export
-    setTimeout(() => {
-      toast({
-        title: "Export réussi",
-        description: "Le fichier a été téléchargé avec succès.",
-        variant: "default"
-      });
-      
-      // Dans une application réelle, on déclencherait ici le téléchargement du fichier généré côté serveur
-      const fakeFileUrl = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,UEsDBBQABgAIAAAAIQD21qXvAgEAABQCAAATA`;
-      const a = document.createElement('a');
-      a.href = fakeFileUrl;
-      a.download = `portefeuille_prets_${new Date().toISOString().slice(0, 10)}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      
-    }, 1500);
+    // Utiliser le service d'export
+    ExcelTemplateService.exportData(samplePortfolio, 'Performance', 'excel');
   };
   
   const handleNewLoan = () => {
-    window.location.href = '/loans/new';
+    navigate('/loans/new');
   };
 
   return (
