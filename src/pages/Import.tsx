@@ -16,11 +16,14 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { downloadExcelTemplate, generateTemplateDocumentation } from '@/services/ExcelTemplateService';
 import LoanDataService from '../services/LoanDataService';
 import { defaultCalculationParameters } from '../data/sampleData';
+import { Loan } from '../types/finance';
+import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
 
 const Import = () => {
   const [fileSelected, setFileSelected] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [previewData, setPreviewData] = useState<any[]>([]);
+  const [previewData, setPreviewData] = useState<Partial<Loan>[]>([]);
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importSuccess, setImportSuccess] = useState(false);
   const [templateDocs, setTemplateDocs] = useState<Record<string, string>>({
@@ -35,20 +38,174 @@ const Import = () => {
     loanDataService.loadFromLocalStorage();
   }, []);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const parseCSV = (file: File): Promise<Partial<Loan>[]> => {
+    return new Promise((resolve, reject) => {
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => {
+          try {
+            const loans = results.data.map((row: any, index) => {
+              return {
+                id: row.id || `imported-${index}`,
+                name: row.name || row.nom || '',
+                clientName: row.clientName || row.client || '',
+                type: row.type || 'term',
+                status: row.status || 'active',
+                originalAmount: parseFloat(row.amount || row.montant || '0'),
+                pd: parseFloat(row.pd || '0') / 100,
+                lgd: parseFloat(row.lgd || '0') / 100,
+                sector: row.sector || row.secteur || 'Général',
+                country: row.country || row.pays || 'France',
+                startDate: row.startDate || row.dateDebut || new Date().toISOString().split('T')[0],
+                endDate: row.endDate || row.dateFin || new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
+                currency: row.currency || row.devise || 'EUR',
+                margin: parseFloat(row.margin || row.marge || '0'),
+                referenceRate: parseFloat(row.referenceRate || row.tauxReference || '0'),
+                outstandingAmount: parseFloat(row.outstandingAmount || '0'),
+                drawnAmount: parseFloat(row.drawnAmount || '0'),
+                undrawnAmount: parseFloat(row.undrawnAmount || '0'),
+                ead: parseFloat(row.ead || '0'),
+                internalRating: row.internalRating || row.ratingInterne || 'BB',
+                fees: {
+                  upfront: parseFloat(row.upfrontFee || '0'),
+                  commitment: parseFloat(row.commitmentFee || '0'),
+                  agency: parseFloat(row.agencyFee || '0'),
+                  other: parseFloat(row.otherFee || '0')
+                },
+                cashFlows: [],
+                metrics: {
+                  evaIntrinsic: 0,
+                  evaSale: 0,
+                  expectedLoss: 0,
+                  rwa: 0,
+                  roe: 0,
+                  raroc: 0,
+                  costOfRisk: 0,
+                  capitalConsumption: 0,
+                  netMargin: 0,
+                  effectiveYield: 0
+                }
+              };
+            });
+            resolve(loans);
+          } catch (error) {
+            reject(new Error(`Erreur de parsing CSV: ${error}`));
+          }
+        },
+        error: (error) => {
+          reject(new Error(`Erreur de parsing CSV: ${error.message}`));
+        }
+      });
+    });
+  };
+
+  const parseExcel = async (file: File): Promise<Partial<Loan>[]> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = e.target?.result;
+          const workbook = XLSX.read(data, { type: 'binary' });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          const jsonData = XLSX.utils.sheet_to_json(worksheet);
+          
+          const loans = jsonData.map((row: any, index) => {
+            return {
+              id: row.id || row.ID || `imported-${index}`,
+              name: row.name || row.nom || row.Nom || '',
+              clientName: row.clientName || row.client || row.Client || '',
+              type: row.type || row.Type || 'term',
+              status: row.status || row.Statut || 'active',
+              originalAmount: parseFloat(String(row.amount || row.montant || row.Montant || '0')),
+              pd: parseFloat(String(row.pd || row.PD || '0')) / 100,
+              lgd: parseFloat(String(row.lgd || row.LGD || '0')) / 100,
+              sector: row.sector || row.secteur || row.Secteur || 'Général',
+              country: row.country || row.pays || row.Pays || 'France',
+              startDate: row.startDate || row.dateDebut || new Date().toISOString().split('T')[0],
+              endDate: row.endDate || row.dateFin || new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
+              currency: row.currency || row.devise || row.Devise || 'EUR',
+              margin: parseFloat(String(row.margin || row.marge || row.Marge || '0')),
+              referenceRate: parseFloat(String(row.referenceRate || row.tauxReference || '0')),
+              outstandingAmount: parseFloat(String(row.outstandingAmount || '0')),
+              drawnAmount: parseFloat(String(row.drawnAmount || '0')),
+              undrawnAmount: parseFloat(String(row.undrawnAmount || '0')),
+              ead: parseFloat(String(row.ead || '0')),
+              internalRating: row.internalRating || row.ratingInterne || 'BB',
+              fees: {
+                upfront: parseFloat(String(row.upfrontFee || '0')),
+                commitment: parseFloat(String(row.commitmentFee || '0')),
+                agency: parseFloat(String(row.agencyFee || '0')),
+                other: parseFloat(String(row.otherFee || '0'))
+              },
+              cashFlows: [],
+              metrics: {
+                evaIntrinsic: 0,
+                evaSale: 0,
+                expectedLoss: 0,
+                rwa: 0,
+                roe: 0,
+                raroc: 0,
+                costOfRisk: 0,
+                capitalConsumption: 0,
+                netMargin: 0,
+                effectiveYield: 0
+              }
+            };
+          });
+          resolve(loans);
+        } catch (error) {
+          reject(new Error(`Erreur de parsing Excel: ${error}`));
+        }
+      };
+      reader.onerror = () => reject(new Error("Erreur de lecture du fichier"));
+      reader.readAsBinaryString(file);
+    });
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      setFileSelected(files[0]);
+      const file = files[0];
+      setFileSelected(file);
       setImportSuccess(false);
       setImportErrors([]);
       
-      if (files[0].name.endsWith('.csv') || files[0].name.endsWith('.xlsx')) {
-        const mockPreviewData = [
-          { id: 'L001', name: 'Prêt A', clientName: 'Client XYZ', type: 'term', amount: 1000000, pd: 0.01, lgd: 0.45 },
-          { id: 'L002', name: 'Prêt B', clientName: 'Client ABC', type: 'revolver', amount: 2000000, pd: 0.02, lgd: 0.35 },
-          { id: 'L003', name: 'Prêt C', clientName: 'Client DEF', type: 'bullet', amount: 1500000, pd: 0.015, lgd: 0.4 }
-        ];
-        setPreviewData(mockPreviewData);
+      try {
+        let parsedLoans: Partial<Loan>[] = [];
+        
+        if (file.name.endsWith('.csv')) {
+          parsedLoans = await parseCSV(file);
+        } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+          parsedLoans = await parseExcel(file);
+        } else {
+          setImportErrors(['Format de fichier non supporté. Veuillez utiliser CSV ou Excel.']);
+          return;
+        }
+        
+        if (parsedLoans.length === 0) {
+          setImportErrors(['Aucune donnée trouvée dans le fichier.']);
+          return;
+        }
+        
+        const errors: string[] = [];
+        parsedLoans.forEach((loan, index) => {
+          if (!loan.name) errors.push(`Ligne ${index + 1}: Le nom du prêt est manquant.`);
+          if (!loan.clientName) errors.push(`Ligne ${index + 1}: Le nom du client est manquant.`);
+          if (isNaN(loan.originalAmount || 0) || (loan.originalAmount || 0) <= 0) {
+            errors.push(`Ligne ${index + 1}: Le montant du prêt est invalide.`);
+          }
+        });
+        
+        if (errors.length > 0) {
+          setImportErrors(errors);
+          return;
+        }
+        
+        setPreviewData(parsedLoans);
+      } catch (error: any) {
+        setImportErrors([`Erreur lors de l'analyse du fichier: ${error.message}`]);
       }
     } else {
       setFileSelected(null);
@@ -60,55 +217,132 @@ const Import = () => {
     e.preventDefault();
   };
   
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     
     const files = e.dataTransfer.files;
     if (files && files.length > 0) {
-      setFileSelected(files[0]);
+      const file = files[0];
+      setFileSelected(file);
       setImportSuccess(false);
       setImportErrors([]);
       
-      if (files[0].name.endsWith('.csv') || files[0].name.endsWith('.xlsx')) {
-        const mockPreviewData = [
-          { id: 'L001', name: 'Prêt A', clientName: 'Client XYZ', type: 'term', amount: 1000000, pd: 0.01, lgd: 0.45 },
-          { id: 'L002', name: 'Prêt B', clientName: 'Client ABC', type: 'revolver', amount: 2000000, pd: 0.02, lgd: 0.35 },
-          { id: 'L003', name: 'Prêt C', clientName: 'Client DEF', type: 'bullet', amount: 1500000, pd: 0.015, lgd: 0.4 }
-        ];
-        setPreviewData(mockPreviewData);
+      try {
+        let parsedLoans: Partial<Loan>[] = [];
+        
+        if (file.name.endsWith('.csv')) {
+          parsedLoans = await parseCSV(file);
+        } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+          parsedLoans = await parseExcel(file);
+        } else {
+          setImportErrors(['Format de fichier non supporté. Veuillez utiliser CSV ou Excel.']);
+          return;
+        }
+        
+        if (parsedLoans.length === 0) {
+          setImportErrors(['Aucune donnée trouvée dans le fichier.']);
+          return;
+        }
+        
+        const errors: string[] = [];
+        parsedLoans.forEach((loan, index) => {
+          if (!loan.name) errors.push(`Ligne ${index + 1}: Le nom du prêt est manquant.`);
+          if (!loan.clientName) errors.push(`Ligne ${index + 1}: Le nom du client est manquant.`);
+          if (isNaN(loan.originalAmount || 0) || (loan.originalAmount || 0) <= 0) {
+            errors.push(`Ligne ${index + 1}: Le montant du prêt est invalide.`);
+          }
+        });
+        
+        if (errors.length > 0) {
+          setImportErrors(errors);
+          return;
+        }
+        
+        setPreviewData(parsedLoans);
+      } catch (error: any) {
+        setImportErrors([`Erreur lors de l'analyse du fichier: ${error.message}`]);
       }
     }
   };
   
   const handleUpload = () => {
-    if (!fileSelected) return;
+    if (!fileSelected || previewData.length === 0) return;
     
     setIsUploading(true);
     
     setTimeout(() => {
-      if (fileSelected.name.endsWith('.csv') || fileSelected.name.endsWith('.xlsx')) {
-        // Add the preview data to the loan service
-        loanDataService.addLoans(previewData, defaultCalculationParameters);
+      try {
+        const loansToAdd = previewData.map(partialLoan => {
+          if (!partialLoan.name || !partialLoan.clientName || !partialLoan.originalAmount) {
+            throw new Error("Données de prêt incomplètes");
+          }
+          
+          const loan: Loan = {
+            id: partialLoan.id || `loan-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+            name: partialLoan.name,
+            clientName: partialLoan.clientName,
+            type: partialLoan.type || 'term',
+            status: partialLoan.status || 'active',
+            startDate: partialLoan.startDate || new Date().toISOString().split('T')[0],
+            endDate: partialLoan.endDate || new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
+            currency: partialLoan.currency || 'EUR',
+            originalAmount: partialLoan.originalAmount,
+            outstandingAmount: partialLoan.outstandingAmount || partialLoan.originalAmount,
+            drawnAmount: partialLoan.drawnAmount || partialLoan.originalAmount,
+            undrawnAmount: partialLoan.undrawnAmount || 0,
+            pd: partialLoan.pd || 0.01,
+            lgd: partialLoan.lgd || 0.45,
+            ead: partialLoan.ead || partialLoan.originalAmount,
+            fees: partialLoan.fees || {
+              upfront: 0,
+              commitment: 0,
+              agency: 0,
+              other: 0
+            },
+            margin: partialLoan.margin || 2,
+            referenceRate: partialLoan.referenceRate || 3,
+            internalRating: partialLoan.internalRating || 'BB',
+            sector: partialLoan.sector || 'Général',
+            country: partialLoan.country || 'France',
+            cashFlows: partialLoan.cashFlows || [],
+            metrics: partialLoan.metrics || {
+              evaIntrinsic: 0,
+              evaSale: 0,
+              expectedLoss: 0,
+              rwa: 0,
+              roe: 0,
+              raroc: 0,
+              costOfRisk: 0,
+              capitalConsumption: 0,
+              netMargin: 0,
+              effectiveYield: 0
+            }
+          };
+          
+          return loan;
+        });
+        
+        loanDataService.addLoans(loansToAdd, defaultCalculationParameters);
         
         setImportSuccess(true);
         setImportErrors([]);
         toast({
           title: "Import réussi",
-          description: `${previewData.length} prêts ont été importés avec succès.`,
+          description: `${loansToAdd.length} prêts ont été importés avec succès.`,
           variant: "default"
         });
-      } else {
+      } catch (error: any) {
         setImportSuccess(false);
-        setImportErrors(['Format de fichier non supporté. Veuillez utiliser CSV ou Excel.']);
+        setImportErrors([`Erreur lors de l'importation: ${error.message}`]);
         toast({
           title: "Erreur d'importation",
-          description: "Format de fichier non supporté.",
+          description: error.message,
           variant: "destructive"
         });
+      } finally {
+        setIsUploading(false);
       }
-      
-      setIsUploading(false);
-    }, 1500);
+    }, 800);
   };
 
   const handleDownloadTemplate = (templateType: string) => {
@@ -204,9 +438,9 @@ const Import = () => {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {previewData.map((row) => (
-                          <TableRow key={row.id}>
-                            <TableCell>{row.id}</TableCell>
+                        {previewData.map((row, index) => (
+                          <TableRow key={row.id || index}>
+                            <TableCell>{row.id || `tempID-${index}`}</TableCell>
                             <TableCell>{row.name}</TableCell>
                             <TableCell>{row.clientName}</TableCell>
                             <TableCell>{row.type}</TableCell>
@@ -215,10 +449,10 @@ const Import = () => {
                                 style: 'currency', 
                                 currency: 'EUR', 
                                 maximumFractionDigits: 0 
-                              }).format(row.amount)}
+                              }).format(row.originalAmount || 0)}
                             </TableCell>
-                            <TableCell className="text-right">{(row.pd * 100).toFixed(2)}%</TableCell>
-                            <TableCell className="text-right">{(row.lgd * 100).toFixed(2)}%</TableCell>
+                            <TableCell className="text-right">{((row.pd || 0) * 100).toFixed(2)}%</TableCell>
+                            <TableCell className="text-right">{((row.lgd || 0) * 100).toFixed(2)}%</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -258,7 +492,7 @@ const Import = () => {
                     </Button>
                     <Button 
                       onClick={handleUpload}
-                      disabled={isUploading || !fileSelected}
+                      disabled={isUploading || !fileSelected || previewData.length === 0}
                     >
                       {isUploading ? (
                         <>
