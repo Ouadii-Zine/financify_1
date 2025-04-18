@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -21,6 +22,7 @@ import {
   Eye 
 } from 'lucide-react';
 import { ExcelTemplateService } from '@/services/ExcelTemplateService';
+import { samplePortfolio } from '@/data/sampleData';
 
 const Reports = () => {
   const [selectedReport, setSelectedReport] = useState('performance');
@@ -48,9 +50,9 @@ const Reports = () => {
       
       if (formatExists) {
         if (format === 'excel') {
-          ExcelTemplateService.exportData({}, reportType, 'excel');
+          ExcelTemplateService.exportData(samplePortfolio, reportType, 'excel');
         } else if (format === 'pdf') {
-          ExcelTemplateService.exportData({}, reportType, 'pdf');
+          ExcelTemplateService.exportData(samplePortfolio, reportType, 'pdf');
         } else {
           ExcelTemplateService.simulateDownload(reportType, format);
         }
