@@ -19,18 +19,20 @@ import {
   Download, 
   Calendar, 
   Filter, 
-  Eye 
+  Eye,
+  Clock
 } from 'lucide-react';
 import { ExcelTemplateService } from '@/services/ExcelTemplateService';
 import { samplePortfolio } from '@/data/sampleData';
 
 const Reports = () => {
-  const [selectedReport, setSelectedReport] = useState('performance');
+  const [selectedReport, setSelectedReport] = useState('Performance');
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [reportFormats, setReportFormats] = useState([
-    { name: 'performance', excel: true, pdf: true },
-    { name: 'risk', excel: true, pdf: false },
-    { name: 'regulatory', excel: false, pdf: true },
+    { name: 'Performance', excel: true, pdf: true, csv: true },
+    { name: 'Risque', excel: true, pdf: true, csv: true },
+    { name: 'Réglementaire', excel: true, pdf: true, csv: true },
+    { name: 'Planifiés', excel: true, pdf: true, csv: true },
   ]);
   
   const handleGenerateReport = (reportType: string, format: string) => {
@@ -43,16 +45,20 @@ const Reports = () => {
       return;
     }
     
-    const selectedReport = reportFormats.find(r => r.name === reportType);
-    if (selectedReport) {
-      const formatExists = (format === 'excel' && selectedReport.excel) || 
-                          (format === 'pdf' && selectedReport.pdf);
+    const selectedReportConfig = reportFormats.find(r => r.name === reportType);
+    if (selectedReportConfig) {
+      const formatExists = 
+        (format === 'excel' && selectedReportConfig.excel) || 
+        (format === 'pdf' && selectedReportConfig.pdf) ||
+        (format === 'csv' && selectedReportConfig.csv);
       
       if (formatExists) {
-        if (format === 'excel') {
-          ExcelTemplateService.exportData(samplePortfolio, reportType, 'excel');
-        } else if (format === 'pdf') {
-          ExcelTemplateService.exportData(samplePortfolio, reportType, 'pdf');
+        if (format === 'excel' || format === 'pdf' || format === 'csv') {
+          ExcelTemplateService.exportData(
+            samplePortfolio, 
+            reportType, 
+            format as 'excel' | 'pdf' | 'csv'
+          );
         } else {
           ExcelTemplateService.simulateDownload(reportType, format);
         }
@@ -89,22 +95,29 @@ const Reports = () => {
               <h3 className="text-lg font-medium mb-2">Type de Rapport</h3>
               <div className="flex flex-col space-y-2">
                 <Button 
-                  variant={selectedReport === 'performance' ? 'default' : 'outline'}
-                  onClick={() => setSelectedReport('performance')}
+                  variant={selectedReport === 'Performance' ? 'default' : 'outline'}
+                  onClick={() => setSelectedReport('Performance')}
                 >
                   Performance
                 </Button>
                 <Button 
-                  variant={selectedReport === 'risk' ? 'default' : 'outline'}
-                  onClick={() => setSelectedReport('risk')}
+                  variant={selectedReport === 'Risque' ? 'default' : 'outline'}
+                  onClick={() => setSelectedReport('Risque')}
                 >
                   Risque
                 </Button>
                 <Button 
-                  variant={selectedReport === 'regulatory' ? 'default' : 'outline'}
-                  onClick={() => setSelectedReport('regulatory')}
+                  variant={selectedReport === 'Réglementaire' ? 'default' : 'outline'}
+                  onClick={() => setSelectedReport('Réglementaire')}
                 >
                   Réglementaire
+                </Button>
+                <Button 
+                  variant={selectedReport === 'Planifiés' ? 'default' : 'outline'}
+                  onClick={() => setSelectedReport('Planifiés')}
+                >
+                  <Clock className="h-4 w-4 mr-2" />
+                  Planifiés
                 </Button>
               </div>
             </div>
@@ -137,9 +150,13 @@ const Reports = () => {
                 <Button 
                   variant="outline"
                   onClick={() => handleGenerateReport(selectedReport, 'csv')}
+                  disabled={!reportFormats.find(r => r.name === selectedReport)?.csv}
                 >
                   <FileText className="h-4 w-4 mr-2" />
                   CSV
+                  {!reportFormats.find(r => r.name === selectedReport)?.csv && (
+                    <Badge className="ml-2">Bientôt</Badge>
+                  )}
                 </Button>
               </div>
             </div>
@@ -214,20 +231,15 @@ const Reports = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow>
-                <TableCell>Prêt A</TableCell>
-                <TableCell>Client X</TableCell>
-                <TableCell>1,000,000 €</TableCell>
-                <TableCell>1.2%</TableCell>
-                <TableCell>45%</TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell>Prêt B</TableCell>
-                <TableCell>Client Y</TableCell>
-                <TableCell>500,000 €</TableCell>
-                <TableCell>0.8%</TableCell>
-                <TableCell>30%</TableCell>
-              </TableRow>
+              {samplePortfolio.loans.slice(0, 5).map((loan) => (
+                <TableRow key={loan.id}>
+                  <TableCell>{loan.name}</TableCell>
+                  <TableCell>{loan.clientName}</TableCell>
+                  <TableCell>{new Intl.NumberFormat('fr-FR', { style: 'currency', currency: loan.currency }).format(loan.originalAmount)}</TableCell>
+                  <TableCell>{(loan.pd * 100).toFixed(2)}%</TableCell>
+                  <TableCell>{(loan.lgd * 100).toFixed(0)}%</TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </CardContent>

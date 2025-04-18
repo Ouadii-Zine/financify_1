@@ -1,3 +1,4 @@
+
 // ExcelTemplateService.ts
 import { toast } from "@/hooks/use-toast";
 import { Loan, Portfolio, CalculationParameters } from "../types/finance";
@@ -46,7 +47,7 @@ const REPORT_TYPES: ReportType[] = [
     description: 'Analyse détaillée des performances du portefeuille',
     formats: REPORT_FORMATS,
     getContent: (portfolio: Portfolio) => {
-      // Simulation de contenu pour le rapport de performance
+      // Contenu du rapport de performance
       let content = 'Rapport de Performance\n\n';
       content += `Portefeuille: ${portfolio.name}\n`;
       content += `Exposition Totale: ${portfolio.metrics.totalExposure}\n`;
@@ -55,7 +56,7 @@ const REPORT_TYPES: ReportType[] = [
       
       content += 'Détail des prêts:\n';
       portfolio.loans.forEach(loan => {
-        content += `${loan.name}, ROE: ${(loan.metrics.roe * 100).toFixed(2)}%, EVA: ${loan.metrics.evaIntrinsic}\n`;
+        content += `${loan.name}, ROE: ${((loan.metrics?.roe || 0) * 100).toFixed(2)}%, EVA: ${loan.metrics?.evaIntrinsic || 0}\n`;
       });
       
       return content;
@@ -66,7 +67,7 @@ const REPORT_TYPES: ReportType[] = [
     description: 'Analyse détaillée des risques du portefeuille',
     formats: REPORT_FORMATS,
     getContent: (portfolio: Portfolio) => {
-      // Simulation de contenu pour le rapport de risque
+      // Contenu du rapport de risque
       let content = 'Rapport de Risque\n\n';
       content += `Portefeuille: ${portfolio.name}\n`;
       content += `Expected Loss Total: ${portfolio.metrics.totalExpectedLoss}\n`;
@@ -75,7 +76,7 @@ const REPORT_TYPES: ReportType[] = [
       
       content += 'Détail des prêts:\n';
       portfolio.loans.forEach(loan => {
-        content += `${loan.name}, PD: ${(loan.pd * 100).toFixed(2)}%, LGD: ${(loan.lgd * 100).toFixed(0)}%, EL: ${loan.metrics.expectedLoss}\n`;
+        content += `${loan.name}, PD: ${(loan.pd * 100).toFixed(2)}%, LGD: ${(loan.lgd * 100).toFixed(0)}%, EL: ${loan.metrics?.expectedLoss || 0}\n`;
       });
       
       return content;
@@ -86,7 +87,7 @@ const REPORT_TYPES: ReportType[] = [
     description: 'Rapports conformes aux exigences réglementaires',
     formats: REPORT_FORMATS,
     getContent: (portfolio: Portfolio) => {
-      // Simulation de contenu pour le rapport réglementaire
+      // Contenu du rapport réglementaire
       let content = 'Rapport Réglementaire\n\n';
       content += `Portefeuille: ${portfolio.name}\n`;
       content += `RWA Total: ${portfolio.metrics.totalRWA}\n`;
@@ -94,7 +95,26 @@ const REPORT_TYPES: ReportType[] = [
       
       content += 'Détail des prêts:\n';
       portfolio.loans.forEach(loan => {
-        content += `${loan.name}, RWA: ${loan.metrics.rwa}, Capital Requis: ${loan.metrics.capitalConsumption}\n`;
+        content += `${loan.name}, RWA: ${loan.metrics?.rwa || 0}, Capital Requis: ${loan.metrics?.capitalConsumption || 0}\n`;
+      });
+      
+      return content;
+    }
+  },
+  {
+    name: 'Planifiés',
+    description: 'Rapports de planification et prévisions',
+    formats: REPORT_FORMATS,
+    getContent: (portfolio: Portfolio) => {
+      // Contenu du rapport planifié
+      let content = 'Rapport de Planification\n\n';
+      content += `Portefeuille: ${portfolio.name}\n`;
+      content += `Exposition Totale: ${portfolio.metrics.totalExposure}\n`;
+      content += `Prévision ROE: ${(portfolio.metrics.portfolioROE * 1.05 * 100).toFixed(2)}%\n`;
+      
+      content += '\nPrévisions des Cashflows:\n';
+      portfolio.loans.forEach(loan => {
+        content += `${loan.name}, Encours Actuel: ${loan.outstandingAmount}, Encours Prévu: ${loan.outstandingAmount * 0.9}\n`;
       });
       
       return content;
@@ -102,7 +122,7 @@ const REPORT_TYPES: ReportType[] = [
   }
 ];
 
-// Export the functions with the exact names expected by Import.tsx
+// Fonction pour télécharger des gabarits - exportée nommément pour Import.tsx
 export const downloadExcelTemplate = (templateType: string): { success: boolean; message: string } => {
   try {
     let content = '';
@@ -161,6 +181,7 @@ export const downloadExcelTemplate = (templateType: string): { success: boolean;
   }
 };
 
+// Fonction pour générer de la documentation - exportée nommément pour Import.tsx
 export const generateTemplateDocumentation = (templateType: string): string => {
   switch (templateType) {
     case 'prets':
@@ -201,7 +222,8 @@ export const generateTemplateDocumentation = (templateType: string): string => {
   }
 };
 
-export const ExcelTemplateService = {
+// Service principal exporté par défaut
+const ExcelTemplateService = {
   // Télécharger un gabarit
   downloadTemplate: (templateType: 'loans' | 'cashflows' | 'parameters') => {
     let content = '';
@@ -253,6 +275,8 @@ export const ExcelTemplateService = {
   
   // Exporter les données en format CSV/Excel/PDF
   exportData: (data: Portfolio | Loan[] | CalculationParameters, reportType: string, format: 'excel' | 'pdf' | 'csv') => {
+    console.log(`Exporting data for report: ${reportType} in format: ${format}`, data);
+    
     const report = REPORT_TYPES.find(r => r.name === reportType);
     if (!report) {
       toast({
@@ -318,18 +342,6 @@ export const ExcelTemplateService = {
       a.click();
       document.body.removeChild(a);
     }, 1500);
-  },
-  
-  // Créer un blob URL pour une version base64 (pour la démo)
-  createBlobUrlFromBase64: (base64: string, mimeType: string) => {
-    const byteCharacters = atob(base64);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    const blob = new Blob([byteArray], { type: mimeType });
-    return URL.createObjectURL(blob);
   },
   
   // Obtenir un descriptif de format adapté pour chaque type de gabarit

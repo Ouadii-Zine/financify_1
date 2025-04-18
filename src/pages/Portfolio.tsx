@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -111,24 +112,44 @@ const Portfolio = () => {
   
   // Gestionnaires d'événements pour les boutons
   const handleImport = () => {
+    console.log("Redirection vers la page d'import");
     navigate('/import');
   };
   
   const handleExport = () => {
+    console.log("Export du portefeuille");
     toast({
       title: "Export en cours",
       description: "Le portefeuille est en cours d'exportation au format Excel...",
       variant: "default"
     });
     
-    // Utiliser le service d'export
-    ExcelTemplateService.exportData(samplePortfolio, 'Performance', 'excel');
+    try {
+      // Utiliser le service d'export
+      ExcelTemplateService.exportData(samplePortfolio, 'Performance', 'excel');
+    } catch (error) {
+      console.error("Erreur lors de l'export du portefeuille:", error);
+      toast({
+        title: "Erreur",
+        description: "Une erreur est survenue lors de l'export du portefeuille.",
+        variant: "destructive"
+      });
+    }
   };
   
   const handleNewLoan = () => {
+    console.log("Redirection vers la création d'un nouveau prêt");
     navigate('/loans/new');
+    
+    // Notification pour indiquer à l'utilisateur qu'il est redirigé
+    toast({
+      title: "Création d'un nouveau prêt",
+      description: "Vous êtes redirigé vers le formulaire de création d'un nouveau prêt.",
+      variant: "default"
+    });
   };
 
+  // Reste du code inchangé...
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -432,7 +453,7 @@ const Portfolio = () => {
               <div className="text-sm text-muted-foreground">
                 Affichage de {loans.length} prêts
               </div>
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" onClick={handleExport}>
                 <Download className="h-4 w-4 mr-2" />
                 Exporter la Liste
               </Button>

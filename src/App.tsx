@@ -18,6 +18,7 @@ import Import from "./pages/Import";
 import Parameters from "./pages/Parameters";
 import Reports from "./pages/Reports";
 import Documentation from "./pages/Documentation";
+import LoanNew from "./pages/LoanNew";
 
 const queryClient = new QueryClient();
 
@@ -31,6 +32,7 @@ const App = () => (
           <Route path="/" element={<Layout><Dashboard /></Layout>} />
           <Route path="/portfolio" element={<Layout><Portfolio /></Layout>} />
           <Route path="/loans" element={<Layout><LoansList /></Layout>} />
+          <Route path="/loans/new" element={<Layout><LoanNew /></Layout>} />
           <Route path="/loans/:id" element={<Layout><LoanDetail /></Layout>} />
           <Route path="/analytics/eva" element={<Layout><AnalyticsEva /></Layout>} />
           <Route path="/analytics/risk" element={<Layout><AnalyticsRisk /></Layout>} />
