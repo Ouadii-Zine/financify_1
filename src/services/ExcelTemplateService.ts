@@ -1,4 +1,3 @@
-
 // ExcelTemplateService.ts
 import { toast } from "@/hooks/use-toast";
 import { Loan, Portfolio, CalculationParameters } from "../types/finance";
@@ -102,6 +101,105 @@ const REPORT_TYPES: ReportType[] = [
     }
   }
 ];
+
+// Export the functions with the exact names expected by Import.tsx
+export const downloadExcelTemplate = (templateType: string): { success: boolean; message: string } => {
+  try {
+    let content = '';
+    let filename = '';
+    let mimeType = '';
+    
+    switch (templateType) {
+      case 'prets':
+        content = LOAN_TEMPLATE_CONTENT;
+        filename = 'gabarit_prets.csv';
+        mimeType = 'text/csv';
+        break;
+      case 'cashflows':
+        content = CASHFLOW_TEMPLATE_CONTENT;
+        filename = 'gabarit_cashflows.csv';
+        mimeType = 'text/csv';
+        break;
+      case 'parametres':
+        content = PARAMETERS_TEMPLATE_CONTENT;
+        filename = 'gabarit_parametres.csv';
+        mimeType = 'text/csv';
+        break;
+      case 'documentation':
+        content = 'Documentation complète pour l\'import de données...';
+        filename = 'guide_import.txt';
+        mimeType = 'text/plain';
+        break;
+      default:
+        return {
+          success: false,
+          message: "Type de gabarit non reconnu"
+        };
+    }
+    
+    // Créer et télécharger le fichier
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    return {
+      success: true,
+      message: `Le gabarit ${filename} a été téléchargé avec succès.`
+    };
+  } catch (error) {
+    console.error("Erreur lors du téléchargement du gabarit:", error);
+    return {
+      success: false,
+      message: "Une erreur est survenue lors du téléchargement du gabarit."
+    };
+  }
+};
+
+export const generateTemplateDocumentation = (templateType: string): string => {
+  switch (templateType) {
+    case 'prets':
+      return `<p>Fichier CSV avec les colonnes suivantes:</p>
+      <ul class="list-disc list-inside mt-2 pl-2">
+        <li><strong>ID:</strong> Identifiant unique du prêt (ex: L001)</li>
+        <li><strong>Nom:</strong> Nom du prêt (ex: Prêt Entreprise A)</li>
+        <li><strong>Client:</strong> Nom du client (ex: Entreprise A)</li>
+        <li><strong>Type:</strong> Type de prêt (term, revolver, bullet, amortizing)</li>
+        <li><strong>Statut:</strong> Statut du prêt (active, closed, default, restructured)</li>
+        <li><strong>Date de début/fin:</strong> Format YYYY-MM-DD</li>
+        <li><strong>Devise:</strong> Code devise (EUR, USD, GBP, CHF, JPY)</li>
+        <li><strong>Montants:</strong> Montants numériques en devise</li>
+        <li><strong>PD/LGD:</strong> Valeurs décimales (ex: 0.01 pour 1%)</li>
+      </ul>`;
+      
+    case 'cashflows':
+      return `<p>Fichier CSV avec les colonnes suivantes:</p>
+      <ul class="list-disc list-inside mt-2 pl-2">
+        <li><strong>ID:</strong> Identifiant unique du cash flow (ex: CF001)</li>
+        <li><strong>Date:</strong> Format YYYY-MM-DD (ex: 2023-02-15)</li>
+        <li><strong>Type:</strong> Type de cash flow (drawdown, repayment, interest, fee)</li>
+        <li><strong>Montant:</strong> Montant en devise</li>
+        <li><strong>Manuel:</strong> true ou false (indique si le cash flow est manuel)</li>
+        <li><strong>Description:</strong> Description du cash flow</li>
+      </ul>`;
+      
+    case 'parametres':
+      return `<p>Fichier CSV avec les colonnes suivantes:</p>
+      <ul class="list-disc list-inside mt-2 pl-2">
+        <li><strong>Paramètre:</strong> Nom du paramètre</li>
+        <li><strong>Valeur:</strong> Valeur numérique du paramètre (ex: 0.12 pour 12%)</li>
+      </ul>
+      <p class="mt-2">Paramètres acceptés: targetROE, corporateTaxRate, capitalRatio, fundingCost, operationalCostRatio</p>`;
+      
+    default:
+      return "<p>Format non spécifié</p>";
+  }
+};
 
 export const ExcelTemplateService = {
   // Télécharger un gabarit

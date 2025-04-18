@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -35,7 +34,6 @@ const Import = () => {
       setImportSuccess(false);
       setImportErrors([]);
       
-      // Simuler un aperçu des données (dans une application réelle, on analyserait le fichier)
       if (files[0].name.endsWith('.csv') || files[0].name.endsWith('.xlsx')) {
         const mockPreviewData = [
           { id: 'L001', name: 'Prêt A', clientName: 'Client XYZ', type: 'term', amount: 1000000, pd: 0.01, lgd: 0.45 },
@@ -63,7 +61,6 @@ const Import = () => {
       setImportSuccess(false);
       setImportErrors([]);
       
-      // Simuler un aperçu des données
       if (files[0].name.endsWith('.csv') || files[0].name.endsWith('.xlsx')) {
         const mockPreviewData = [
           { id: 'L001', name: 'Prêt A', clientName: 'Client XYZ', type: 'term', amount: 1000000, pd: 0.01, lgd: 0.45 },
@@ -80,9 +77,7 @@ const Import = () => {
     
     setIsUploading(true);
     
-    // Simuler un processus d'importation
     setTimeout(() => {
-      // Vérifier l'extension du fichier
       if (fileSelected.name.endsWith('.csv') || fileSelected.name.endsWith('.xlsx')) {
         setImportSuccess(true);
         setImportErrors([]);
@@ -105,7 +100,6 @@ const Import = () => {
     }, 1500);
   };
 
-  // Fonction pour télécharger les gabarits Excel
   const handleDownloadTemplate = (templateType: string) => {
     const result = downloadExcelTemplate(templateType);
     
