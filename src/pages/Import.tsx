@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Upload, FileText, AlertTriangle, CheckCircle2, Download, Info } from 'lucide-react';
@@ -14,6 +14,8 @@ import {
 import { toast } from '@/hooks/use-toast';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { downloadExcelTemplate, generateTemplateDocumentation } from '@/services/ExcelTemplateService';
+import LoanDataService from '../services/LoanDataService';
+import { defaultCalculationParameters } from '../data/sampleData';
 
 const Import = () => {
   const [fileSelected, setFileSelected] = useState<File | null>(null);
@@ -27,6 +29,12 @@ const Import = () => {
     parametres: generateTemplateDocumentation('parametres')
   });
   
+  const loanDataService = LoanDataService.getInstance();
+
+  useEffect(() => {
+    loanDataService.loadFromLocalStorage();
+  }, []);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
@@ -79,6 +87,9 @@ const Import = () => {
     
     setTimeout(() => {
       if (fileSelected.name.endsWith('.csv') || fileSelected.name.endsWith('.xlsx')) {
+        // Add the preview data to the loan service
+        loanDataService.addLoans(previewData, defaultCalculationParameters);
+        
         setImportSuccess(true);
         setImportErrors([]);
         toast({

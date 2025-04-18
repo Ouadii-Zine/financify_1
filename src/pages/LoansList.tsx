@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -42,6 +41,7 @@ import {
 import { sampleLoans, defaultCalculationParameters } from '../data/sampleData';
 import { Loan } from '../types/finance';
 import { calculateLoanMetrics } from '../utils/financialCalculations';
+import LoanDataService from '../services/LoanDataService';
 
 const LoansList = () => {
   const navigate = useNavigate();
@@ -49,15 +49,14 @@ const LoansList = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [sortField, setSortField] = useState<string>('name');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  
+  const [sortDirection, setSortDirection<'asc' | 'desc'>>('asc');
+  const loanDataService = LoanDataService.getInstance();
+
   useEffect(() => {
-    // Calculer les métriques pour chaque prêt
-    const loansWithMetrics = sampleLoans.map(loan => {
-      const metrics = calculateLoanMetrics(loan, defaultCalculationParameters);
-      return { ...loan, metrics };
-    });
-    setLoans(loansWithMetrics);
+    loanDataService.loadFromLocalStorage();
+    const userLoans = loanDataService.getLoans();
+    const allLoans = [...sampleLoans, ...userLoans];
+    setLoans(allLoans);
   }, []);
   
   // Filtrer les prêts selon la recherche et les filtres

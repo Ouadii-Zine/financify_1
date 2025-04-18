@@ -1,5 +1,4 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -24,6 +23,7 @@ import {
 } from 'lucide-react';
 import ExcelTemplateService from '@/services/ExcelTemplateService';
 import { samplePortfolio } from '@/data/sampleData';
+import LoanDataService from '../services/LoanDataService';
 
 const Reports = () => {
   const [selectedReport, setSelectedReport] = useState('Performance');
@@ -34,6 +34,18 @@ const Reports = () => {
     { name: 'Réglementaire', excel: true, pdf: true, csv: true },
     { name: 'Planifiés', excel: true, pdf: true, csv: true },
   ]);
+  const loanDataService = LoanDataService.getInstance();
+  const [portfolio, setPortfolio] = useState(samplePortfolio);
+
+  useEffect(() => {
+    loanDataService.loadFromLocalStorage();
+    const userLoans = loanDataService.getLoans();
+    const updatedPortfolio = {
+      ...samplePortfolio,
+      loans: [...samplePortfolio.loans, ...userLoans]
+    };
+    setPortfolio(updatedPortfolio);
+  }, []);
   
   const handleGenerateReport = (reportType: string, format: string) => {
     if (!reportType || !format) {
@@ -55,7 +67,7 @@ const Reports = () => {
       if (formatExists) {
         if (format === 'excel' || format === 'pdf' || format === 'csv') {
           ExcelTemplateService.exportData(
-            samplePortfolio, 
+            portfolio, 
             reportType, 
             format as 'excel' | 'pdf' | 'csv'
           );
@@ -231,7 +243,7 @@ const Reports = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {samplePortfolio.loans.slice(0, 5).map((loan) => (
+              {portfolio.loans.slice(0, 5).map((loan) => (
                 <TableRow key={loan.id}>
                   <TableCell>{loan.name}</TableCell>
                   <TableCell>{loan.clientName}</TableCell>
