@@ -22,7 +22,7 @@ import {
   Eye,
   Clock
 } from 'lucide-react';
-import { ExcelTemplateService } from '@/services/ExcelTemplateService';
+import ExcelTemplateService from '@/services/ExcelTemplateService';
 import { samplePortfolio } from '@/data/sampleData';
 
 const Reports = () => {
