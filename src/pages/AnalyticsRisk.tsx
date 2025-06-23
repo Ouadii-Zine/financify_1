@@ -30,7 +30,7 @@ const AnalyticsRisk = () => {
     defaultCalculationParameters
   );
   
-  // Données pour la répartition des Expected Loss par secteur
+  // Data for Expected Loss distribution by sector
   const elBySector = samplePortfolio.loans.reduce((acc, loan) => {
     const sector = loan.sector;
     const el = loan.pd * loan.lgd * loan.ead;
@@ -45,7 +45,7 @@ const AnalyticsRisk = () => {
     return acc;
   }, [] as { name: string; value: number }[]);
   
-  // Données pour le graphique PD vs LGD
+  // Data for PD vs LGD chart
   const pdLgdData = samplePortfolio.loans.map(loan => ({
     name: loan.name,
     pd: loan.pd * 100,
@@ -54,7 +54,7 @@ const AnalyticsRisk = () => {
     el: loan.pd * loan.lgd * loan.ead
   }));
   
-  // Top 5 des prêts par Expected Loss
+  // Top 5 loans by Expected Loss
   const topLoansByEL = [...samplePortfolio.loans]
     .sort((a, b) => (b.pd * b.lgd * b.ead) - (a.pd * a.lgd * a.ead))
     .slice(0, 5)
@@ -66,7 +66,7 @@ const AnalyticsRisk = () => {
   
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Analyse de Risque</h1>
+      <h1 className="text-2xl font-bold">Risk Analysis</h1>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card>
@@ -85,14 +85,14 @@ const AnalyticsRisk = () => {
               }).format(portfolioMetrics.totalExpectedLoss)}
             </div>
             <p className="text-sm text-muted-foreground mt-1">
-              {((portfolioMetrics.totalExpectedLoss / portfolioMetrics.totalExposure) * 100).toFixed(2)}% du portefeuille
+              {((portfolioMetrics.totalExpectedLoss / portfolioMetrics.totalExposure) * 100).toFixed(2)}% of portfolio
             </p>
           </CardContent>
         </Card>
         
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-lg">PD Moyenne Pondérée</CardTitle>
+            <CardTitle className="text-lg">Weighted Average PD</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">
@@ -103,7 +103,7 @@ const AnalyticsRisk = () => {
         
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-lg">LGD Moyenne Pondérée</CardTitle>
+            <CardTitle className="text-lg">Weighted Average LGD</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">
@@ -115,15 +115,15 @@ const AnalyticsRisk = () => {
       
       <Tabs defaultValue="el-distribution">
         <TabsList>
-          <TabsTrigger value="el-distribution">Distribution des EL</TabsTrigger>
-          <TabsTrigger value="pd-lgd-map">Cartographie PD/LGD</TabsTrigger>
-          <TabsTrigger value="top-risky-loans">Prêts Plus Risqués</TabsTrigger>
+          <TabsTrigger value="el-distribution">EL Distribution</TabsTrigger>
+          <TabsTrigger value="pd-lgd-map">PD/LGD Mapping</TabsTrigger>
+          <TabsTrigger value="top-risky-loans">Riskiest Loans</TabsTrigger>
         </TabsList>
         
         <TabsContent value="el-distribution">
           <Card>
             <CardHeader>
-              <CardTitle>Répartition des Expected Loss par Secteur</CardTitle>
+              <CardTitle>Expected Loss Distribution by Sector</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-80">
@@ -163,7 +163,7 @@ const AnalyticsRisk = () => {
         <TabsContent value="pd-lgd-map">
           <Card>
             <CardHeader>
-              <CardTitle>Cartographie PD/LGD</CardTitle>
+              <CardTitle>PD/LGD Mapping</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-80">
@@ -189,7 +189,7 @@ const AnalyticsRisk = () => {
                     <ZAxis 
                       type="number" 
                       dataKey="exposure" 
-                      name="Exposition" 
+                      name="Exposure" 
                       range={[50, 1000]} 
                     />
                     <Tooltip 
@@ -197,12 +197,12 @@ const AnalyticsRisk = () => {
                         name === 'exposure' 
                           ? new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(value)
                           : `${value.toFixed(2)}%`,
-                        name === 'pd' ? 'PD' : name === 'lgd' ? 'LGD' : 'Exposition'
+                        name === 'pd' ? 'PD' : name === 'lgd' ? 'LGD' : 'Exposure'
                       ]}
                       cursor={{ strokeDasharray: '3 3' }}
                     />
                     <Legend />
-                    <Scatter name="Prêts" data={pdLgdData} fill="#FF3B5B" />
+                    <Scatter name="Loans" data={pdLgdData} fill="#FF3B5B" />
                   </ScatterChart>
                 </ResponsiveContainer>
               </div>
@@ -213,7 +213,7 @@ const AnalyticsRisk = () => {
         <TabsContent value="top-risky-loans">
           <Card>
             <CardHeader>
-              <CardTitle>Top 5 Prêts par Expected Loss</CardTitle>
+              <CardTitle>Top 5 Loans by Expected Loss</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-80">
@@ -228,12 +228,12 @@ const AnalyticsRisk = () => {
                         name === 'expectedLoss' 
                           ? new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(value)
                           : `${value.toFixed(2)}%`,
-                        name === 'expectedLoss' ? 'Expected Loss' : 'Coût du Risque'
+                        name === 'expectedLoss' ? 'Expected Loss' : 'Cost of Risk'
                       ]}
                     />
                     <Legend />
                     <Bar dataKey="expectedLoss" yAxisId="left" fill="#FF3B5B" name="Expected Loss" />
-                    <Bar dataKey="costOfRisk" yAxisId="right" fill="#FFB800" name="Coût du Risque (%)" />
+                    <Bar dataKey="costOfRisk" yAxisId="right" fill="#FFB800" name="Cost of Risk (%)" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

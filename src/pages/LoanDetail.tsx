@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -45,32 +44,90 @@ import {
 import { sampleLoans, defaultCalculationParameters } from '../data/sampleData';
 import { Loan, CashFlow } from '../types/finance';
 import { calculateLoanMetrics } from '../utils/financialCalculations';
+import LoanDataService from '../services/LoanDataService';
+import { toast } from '@/hooks/use-toast';
 
 const LoanDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [loan, setLoan] = useState<Loan | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  
+  // Check if we are in edit mode (via query parameter)
+  const searchParams = new URLSearchParams(location.search);
+  const isEditMode = searchParams.get('edit') === 'true';
   
   useEffect(() => {
-    // Trouver le prêt correspondant à l'ID
-    const foundLoan = sampleLoans.find(l => l.id === id);
-    
-    if (foundLoan) {
-      // Calculer les métriques du prêt
-      const metrics = calculateLoanMetrics(foundLoan, defaultCalculationParameters);
-      setLoan({ ...foundLoan, metrics });
+    if (!id) {
+      setIsLoading(false);
+      return;
     }
-  }, [id]);
+    
+    setIsLoading(true);
+    const loanDataService = LoanDataService.getInstance();
+    
+    try {
+      // Search for the loan in the service
+      const foundLoan = loanDataService.getLoanById(id);
+      
+      if (foundLoan) {
+        // Calculate loan metrics if necessary
+        const metrics = foundLoan.metrics || calculateLoanMetrics(foundLoan, defaultCalculationParameters);
+        setLoan({ ...foundLoan, metrics });
+      } else {
+        // If in edit mode and loan doesn't exist, redirect to list
+        if (isEditMode) {
+          toast({
+            title: "Error",
+            description: "The loan you want to edit does not exist.",
+            variant: "destructive",
+          });
+          navigate('/loans');
+        }
+      }
+    } catch (error) {
+      console.error("Error loading loan:", error);
+      toast({
+        title: "Error",
+        description: "Unable to load loan details.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [id, isEditMode, navigate]);
+  
+  // Redirect to edit form if in edit mode
+  useEffect(() => {
+    if (isEditMode && loan) {
+      // Store loan data in localStorage for edit form
+      localStorage.setItem('loan-to-edit', JSON.stringify(loan));
+              // Redirect to full edit page or display edit form
+      navigate(`/loans/new?edit=true&id=${loan.id}`);
+    }
+  }, [isEditMode, loan, navigate]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold mb-2">Loading...</h2>
+          <p className="text-muted-foreground">Retrieving loan details</p>
+        </div>
+      </div>
+    );
+  }
   
   if (!loan) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
-          <h2 className="text-xl font-semibold mb-2">Prêt non trouvé</h2>
-          <p className="text-muted-foreground mb-4">Le prêt que vous cherchez n'existe pas ou a été supprimé.</p>
+          <h2 className="text-xl font-semibold mb-2">Loan not found</h2>
+          <p className="text-muted-foreground mb-4">The loan you are looking for does not exist or has been deleted.</p>
           <Button onClick={() => navigate('/loans')}>
             <ArrowLeft className="h-4 w-4 mr-2" />
-            Retour à la liste
+            Back to list
           </Button>
         </div>
       </div>

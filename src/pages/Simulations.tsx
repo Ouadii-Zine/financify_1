@@ -20,7 +20,7 @@ const Simulations = () => {
   const [lgdMultiplier, setLgdMultiplier] = useState(1);
   const [rateShift, setRateShift] = useState(0);
   const [spreadShift, setSpreadShift] = useState(0);
-  const [scenarioName, setScenarioName] = useState("Mon Scénario");
+  const [scenarioName, setScenarioName] = useState("My Scenario");
   
   // Simuler le scénario avec les paramètres actuels
   const simulatedMetrics = simulateScenario(
@@ -73,7 +73,7 @@ const Simulations = () => {
       roe: simulateScenario(samplePortfolio.loans, defaultCalculationParameters, 1, 1, 0, 0.005).portfolioROE * 100
     },
     { 
-      name: 'Combiné', 
+      name: 'Combined', 
       el: simulateScenario(samplePortfolio.loans, defaultCalculationParameters, 1.1, 1.1, 0.005, 0.005).totalExpectedLoss,
       rwa: simulateScenario(samplePortfolio.loans, defaultCalculationParameters, 1.1, 1.1, 0.005, 0.005).totalRWA,
       roe: simulateScenario(samplePortfolio.loans, defaultCalculationParameters, 1.1, 1.1, 0.005, 0.005).portfolioROE * 100
@@ -85,7 +85,7 @@ const Simulations = () => {
     setLgdMultiplier(1);
     setRateShift(0);
     setSpreadShift(0);
-    setScenarioName("Mon Scénario");
+    setScenarioName("My Scenario");
   };
 
   return (
@@ -94,7 +94,7 @@ const Simulations = () => {
       
       <Card>
         <CardHeader>
-          <CardTitle>Paramètres de Simulation</CardTitle>
+          <CardTitle>Simulation Parameters</CardTitle>
         </CardHeader>
         <CardContent>
           <SimulationControls
@@ -115,7 +115,7 @@ const Simulations = () => {
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <MetricCard
-          title="Impact sur EL"
+          title="Impact on EL"
           icon={<AlertTriangle />}
           iconColor="text-financial-yellow"
           value={new Intl.NumberFormat('fr-FR', { 
@@ -127,7 +127,7 @@ const Simulations = () => {
         />
         
         <MetricCard
-          title="Impact sur RWA"
+          title="Impact on RWA"
           icon={<BarChart3 />}
           iconColor="text-financial
 
@@ -141,7 +141,7 @@ const Simulations = () => {
         />
         
         <MetricCard
-          title="Impact sur ROE"
+          title="Impact on ROE"
           icon={<TrendingUp />}
           iconColor="text-financial-green"
           value={`${(variations.roe * 100).toFixed(2)}%`}
@@ -151,14 +151,14 @@ const Simulations = () => {
       
       <Tabs defaultValue="comparison">
         <TabsList>
-          <TabsTrigger value="comparison">Comparaison Scénario</TabsTrigger>
-          <TabsTrigger value="sensitivity">Analyse de Sensibilité</TabsTrigger>
+          <TabsTrigger value="comparison">Scenario Comparison</TabsTrigger>
+          <TabsTrigger value="sensitivity">Sensitivity Analysis</TabsTrigger>
         </TabsList>
         
         <TabsContent value="comparison">
           <Card>
             <CardHeader>
-              <CardTitle>Comparaison Base vs Scénario {scenarioName}</CardTitle>
+              <CardTitle>Base vs Scenario {scenarioName} Comparison</CardTitle>
             </CardHeader>
             <CardContent>
               <ComparisonChart data={compareData} scenarioName={scenarioName} />
@@ -169,7 +169,7 @@ const Simulations = () => {
         <TabsContent value="sensitivity">
           <Card>
             <CardHeader>
-              <CardTitle>Analyse de Sensibilité</CardTitle>
+              <CardTitle>Sensitivity Analysis</CardTitle>
             </CardHeader>
             <CardContent>
               <SensitivityChart data={sensitivityData} />

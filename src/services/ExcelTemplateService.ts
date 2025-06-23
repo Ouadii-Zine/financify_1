@@ -1,11 +1,10 @@
-
 // ExcelTemplateService.ts
 import { toast } from "@/hooks/use-toast";
 import { Loan, Portfolio, CalculationParameters } from "../types/finance";
 
 // Templates CSV/Excel pour l'import
-const LOAN_TEMPLATE_CONTENT = `ID,Nom,Client,Type,Statut,Date de début,Date de fin,Devise,Montant original,Encours,Montant tiré,Montant non tiré,PD,LGD,EAD,Frais upfront,Frais commitment,Frais agency,Autres frais,Marge,Taux de référence,Notation interne,Secteur,Pays
-L001,Prêt Entreprise A,Entreprise A,term,active,2023-01-01,2026-01-01,EUR,1000000,900000,800000,100000,0.01,0.45,800000,5000,0.005,2000,1000,0.02,0.03,BB+,Technologie,France`;
+const LOAN_TEMPLATE_CONTENT = `ID,Nom,Client,Type,Statut,Date de début,Date de fin,Devise,Montant original,Encours,Montant tiré,Montant non tiré,PD,LGD,EAD,Marge,Taux de référence,Notation interne,Secteur,Pays,Frais upfront,Frais commitment,Frais agency,Autres frais
+L001,Prêt Entreprise A,Entreprise A,term,active,2023-01-01,2026-01-01,EUR,1000000,900000,800000,100000,1,45,800000,2,3,BB+,Technologie,France,5000,0.5,2000,1000`;
 
 const CASHFLOW_TEMPLATE_CONTENT = `ID,Date,Type,Montant,Manuel,Description
 CF001,2023-02-15,drawdown,200000,false,Tirage initial
@@ -267,129 +266,174 @@ const ExcelTemplateService = {
     URL.revokeObjectURL(url);
     
     toast({
-      title: "Gabarit téléchargé",
+      title: "Téléchargement réussi",
       description: `Le gabarit ${filename} a été téléchargé avec succès.`,
       variant: "default"
     });
   },
   
-  // Exporter les données en format CSV/Excel/PDF
-  exportData: (data: Portfolio | Loan[] | CalculationParameters, reportType: string, format: 'excel' | 'pdf' | 'csv') => {
-    console.log(`Exporting data for report: ${reportType} in format: ${format}`, data);
-    
-    const report = REPORT_TYPES.find(r => r.name === reportType);
-    if (!report) {
-      toast({
-        title: "Erreur",
-        description: "Type de rapport non reconnu",
-        variant: "destructive"
-      });
-      return;
-    }
-    
-    const reportFormat = report.formats.find(f => f.type === format);
-    if (!reportFormat) {
-      toast({
-        title: "Erreur",
-        description: "Format de rapport non supporté",
-        variant: "destructive"
-      });
-      return;
-    }
-    
-    // Générer le contenu du rapport
-    const content = report.getContent(data);
-    
-    // Dans une application réelle, on convertirait le contenu au format approprié
-    // Ici, on simule juste un téléchargement avec le bon type MIME
-    const blob = new Blob([content], { type: reportFormat.mimeType });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `rapport_${reportType.toLowerCase()}${reportFormat.extension}`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    
-    toast({
-      title: "Rapport généré",
-      description: `Le rapport ${reportType} au format ${format.toUpperCase()} a été téléchargé.`,
-      variant: "default"
-    });
+  // Générer la documentation d'un gabarit
+  generateDocumentation: (templateType: string): string => {
+    return generateTemplateDocumentation(templateType);
   },
   
-  // Simuler un téléchargement d'exemple pour les formats non supportés en réalité
-  simulateDownload: (reportType: string, format: string) => {
-    toast({
-      title: "Génération en cours",
-      description: `Préparation du rapport ${reportType} au format ${format.toUpperCase()}...`,
-      variant: "default"
-    });
-    
-    setTimeout(() => {
-      toast({
-        title: "Rapport généré",
-        description: `Le rapport ${reportType} au format ${format.toUpperCase()} a été téléchargé.`,
-        variant: "default"
-      });
+  // Export complet des données
+  exportData: (data: Portfolio, reportName: string, format: 'excel' | 'csv' = 'excel') => {
+    try {
+      if (!data || !data.loans) {
+        throw new Error("Données de portfolio invalides pour l'export");
+      }
       
-      // Simuler un téléchargement pour la démonstration
+      const content = ExcelTemplateService.generatePortfolioExport(data);
+      const filename = `${reportName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.${format === 'excel' ? 'xlsx' : 'csv'}`;
+      const mimeType = format === 'excel' 
+        ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        : 'text/csv';
+      
+      if (format === 'excel') {
+        ExcelTemplateService.exportExcel(content, filename);
+      } else {
+        ExcelTemplateService.exportCSV(content, filename);
+      }
+      
+      return {
+        success: true,
+        message: `Les données ont été exportées avec succès au format ${format.toUpperCase()}.`
+      };
+    } catch (error) {
+      console.error("Erreur lors de l'export des données:", error);
+      return {
+        success: false,
+        message: `Une erreur est survenue lors de l'export des données: ${error}`
+      };
+    }
+  },
+  
+  // Génère les données complètes du portfolio pour l'export
+  generatePortfolioExport: (portfolio: Portfolio) => {
+    // Créer un objet pour l'export
+    const exportData = {
+      portfolioInfo: {
+        nom: portfolio.name,
+        description: portfolio.description || 'Portfolio Financify',
+        dateExport: new Date().toISOString(),
+        nombrePrets: portfolio.loans.length,
+        expositionTotale: portfolio.metrics.totalExposure,
+        roePortfolio: portfolio.metrics.portfolioROE,
+        rarocPortfolio: portfolio.metrics.portfolioRAROC,
+        expectedLossTotal: portfolio.metrics.totalExpectedLoss,
+        rwaTotal: portfolio.metrics.totalRWA
+      },
+      loans: portfolio.loans.map(loan => ({
+        id: loan.id,
+        nom: loan.name,
+        client: loan.clientName,
+        type: loan.type,
+        statut: loan.status,
+        dateDebut: loan.startDate,
+        dateFin: loan.endDate,
+        devise: loan.currency,
+        montantOriginal: loan.originalAmount,
+        montantRestant: loan.outstandingAmount,
+        montantTire: loan.drawnAmount,
+        montantNonTire: loan.undrawnAmount,
+        pd: loan.pd,
+        lgd: loan.lgd,
+        ead: loan.ead,
+        fraisUpfront: loan.fees.upfront,
+        fraisCommitment: loan.fees.commitment,
+        fraisAgency: loan.fees.agency,
+        autresFrais: loan.fees.other,
+        marge: loan.margin,
+        tauxReference: loan.referenceRate,
+        notationInterne: loan.internalRating,
+        secteur: loan.sector,
+        pays: loan.country,
+        evaIntrinseque: loan.metrics.evaIntrinsic,
+        evaCession: loan.metrics.evaSale,
+        perteAttendue: loan.metrics.expectedLoss,
+        rwa: loan.metrics.rwa,
+        roe: loan.metrics.roe,
+        raroc: loan.metrics.raroc,
+        coutRisque: loan.metrics.costOfRisk,
+        consommationCapital: loan.metrics.capitalConsumption,
+        margeNette: loan.metrics.netMargin,
+        rendementEffectif: loan.metrics.effectiveYield
+      })),
+      cashflows: portfolio.loans.flatMap(loan => 
+        loan.cashFlows.map(cf => ({
+          loanId: loan.id,
+          loanName: loan.name,
+          id: cf.id,
+          date: cf.date,
+          type: cf.type,
+          montant: cf.amount,
+          estManuel: cf.isManual,
+          description: cf.description || ''
+        }))
+      )
+    };
+    
+    return exportData;
+  },
+  
+  // Export au format Excel
+  exportExcel: (data: any, filename: string) => {
+    try {
+      // Utilisation de la bibliothèque XLSX
+      const XLSX = require('xlsx');
+      
+      // Création du classeur
+      const workbook = XLSX.utils.book_new();
+      
+      // Création des feuilles
+      
+      // 1. Feuille d'informations du portfolio
+      const portfolioSheet = XLSX.utils.json_to_sheet([data.portfolioInfo]);
+      XLSX.utils.book_append_sheet(workbook, portfolioSheet, "Informations Portfolio");
+      
+      // 2. Feuille des prêts
+      const loansSheet = XLSX.utils.json_to_sheet(data.loans);
+      XLSX.utils.book_append_sheet(workbook, loansSheet, "Prêts");
+      
+      // 3. Feuille des cashflows
+      if (data.cashflows && data.cashflows.length > 0) {
+        const cashflowsSheet = XLSX.utils.json_to_sheet(data.cashflows);
+        XLSX.utils.book_append_sheet(workbook, cashflowsSheet, "Cashflows");
+      }
+      
+      // Écriture du fichier
+      XLSX.writeFile(workbook, filename);
+      
+    } catch (error) {
+      console.error("Erreur lors de l'export Excel:", error);
+      throw error;
+    }
+  },
+  
+  // Export au format CSV
+  exportCSV: (data: any, filename: string) => {
+    try {
+      // Utilisation de Papa Parse pour la conversion en CSV
+      const Papa = require('papaparse');
+      
+      // Conversion des données en CSV
+      const loansCSV = Papa.unparse(data.loans);
+      
+      // Création et téléchargement du fichier
+      const blob = new Blob([loansCSV], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = '#';
-      a.download = `rapport_${reportType.toLowerCase()}.${format.toLowerCase()}`;
+      a.href = url;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-    }, 1500);
-  },
-  
-  // Obtenir un descriptif de format adapté pour chaque type de gabarit
-  getTemplateDescription: (templateType: 'loans' | 'cashflows' | 'parameters'): string => {
-    switch (templateType) {
-      case 'loans':
-        return `Fichier CSV avec les colonnes suivantes:
-- ID: Identifiant unique du prêt (ex: L001)
-- Nom: Nom du prêt (ex: Prêt Entreprise A)
-- Client: Nom du client (ex: Entreprise A)
-- Type: Type de prêt (term, revolver, bullet, amortizing)
-- Statut: Statut du prêt (active, closed, default, restructured)
-- Date de début: Format YYYY-MM-DD (ex: 2023-01-01)
-- Date de fin: Format YYYY-MM-DD (ex: 2026-01-01)
-- Devise: Code devise (EUR, USD, GBP, CHF, JPY)
-- Montant original: Montant initial du prêt en devise
-- Encours: Montant restant dû en devise
-- Montant tiré: Montant effectivement tiré en devise
-- Montant non tiré: Montant disponible mais non tiré en devise
-- PD: Probabilité de défaut (ex: 0.01 pour 1%)
-- LGD: Loss Given Default (ex: 0.45 pour 45%)
-- EAD: Exposure at Default en devise
-- Frais upfront: Frais initiaux en devise
-- Frais commitment: Taux annuel des frais d'engagement (ex: 0.005 pour 0.5%)
-- Frais agency: Frais d'agence en devise
-- Autres frais: Autres frais en devise
-- Marge: Marge en % (ex: 0.02 pour 2%)
-- Taux de référence: Taux de base en % (ex: 0.03 pour 3%)
-- Notation interne: Rating interne (ex: BB+)
-- Secteur: Secteur d'activité (ex: Technologie)
-- Pays: Pays du client (ex: France)`;
+      URL.revokeObjectURL(url);
       
-      case 'cashflows':
-        return `Fichier CSV avec les colonnes suivantes:
-- ID: Identifiant unique du cash flow (ex: CF001)
-- Date: Format YYYY-MM-DD (ex: 2023-02-15)
-- Type: Type de cash flow (drawdown, repayment, interest, fee)
-- Montant: Montant en devise
-- Manuel: true ou false (indique si le cash flow est manuel)
-- Description: Description du cash flow (ex: Tirage initial)`;
-      
-      case 'parameters':
-        return `Fichier CSV avec les colonnes suivantes:
-- Paramètre: Nom du paramètre (targetROE, corporateTaxRate, capitalRatio, fundingCost, operationalCostRatio)
-- Valeur: Valeur numérique du paramètre (ex: 0.12 pour 12%)`;
-      
-      default:
-        return "Format non spécifié";
+    } catch (error) {
+      console.error("Erreur lors de l'export CSV:", error);
+      throw error;
     }
   }
 };

@@ -36,18 +36,18 @@ const SimulationControls = ({
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
       <div className="space-y-6">
         <div className="space-y-2">
-          <Label htmlFor="scenario-name">Nom du Scénario</Label>
+          <Label htmlFor="scenario-name">Scenario Name</Label>
           <Input 
             id="scenario-name" 
             value={scenarioName} 
             onChange={(e) => onScenarioNameChange(e.target.value)} 
-            placeholder="Nom du scénario"
+            placeholder="Scenario name"
           />
         </div>
         
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label htmlFor="pd-multiplier">Multiplicateur PD: {pdMultiplier.toFixed(2)}x</Label>
+            <Label htmlFor="pd-multiplier">PD Multiplier: {pdMultiplier.toFixed(2)}x</Label>
             <span className="text-sm text-muted-foreground">
               {((pdMultiplier - 1) * 100).toFixed(0)}%
             </span>
@@ -64,7 +64,7 @@ const SimulationControls = ({
         
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label htmlFor="lgd-multiplier">Multiplicateur LGD: {lgdMultiplier.toFixed(2)}x</Label>
+            <Label htmlFor="lgd-multiplier">LGD Multiplier: {lgdMultiplier.toFixed(2)}x</Label>
             <span className="text-sm text-muted-foreground">
               {((lgdMultiplier - 1) * 100).toFixed(0)}%
             </span>
@@ -83,7 +83,7 @@ const SimulationControls = ({
       <div className="space-y-6">
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label htmlFor="rate-shift">Variation Taux: {rateShift} bp</Label>
+            <Label htmlFor="rate-shift">Rate Shift: {rateShift} bp</Label>
             <span className="text-sm text-muted-foreground">
               {(rateShift / 100).toFixed(2)}%
             </span>
@@ -100,7 +100,7 @@ const SimulationControls = ({
         
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label htmlFor="spread-shift">Variation Marges: {spreadShift} bp</Label>
+            <Label htmlFor="spread-shift">Spread Shift: {spreadShift} bp</Label>
             <span className="text-sm text-muted-foreground">
               {(spreadShift / 100).toFixed(2)}%
             </span>
@@ -122,7 +122,7 @@ const SimulationControls = ({
             onClick={onReset}
           >
             <RefreshCw className="h-4 w-4" />
-            <span>Réinitialiser</span>
+            <span>Reset</span>
           </Button>
         </div>
       </div>

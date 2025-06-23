@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
@@ -18,6 +18,189 @@ import {
 import { toast } from '@/hooks/use-toast';
 import { defaultCalculationParameters } from '@/data/sampleData';
 import { PlusCircle, Save, Trash2 } from 'lucide-react';
+
+// Liste des pays extraite du fichier Excel "Country of Operation" - traduite en anglais
+const COUNTRIES = [
+  "SOUTH AFRICA", "ALGERIA", "GERMANY", "ANGOLA", "NETHERLANDS ANTILLES",
+  "SAUDI ARABIA", "ARGENTINA", "AUSTRALIA", "AUSTRIA", "AZERBAIJAN",
+  "BAHAMAS", "BAHRAIN", "BELGIUM", "BERMUDA", "BOSNIA AND HERZEGOVINA",
+  "BRAZIL", "BULGARIA", "CAMBODIA", "CAMEROON", "CANADA",
+  "CAYMAN ISLANDS", "CHILE", "CHINA", "CYPRUS", "COLOMBIA",
+  "CONGO", "DEMOCRATIC REPUBLIC OF THE CONGO", "REPUBLIC OF KOREA", "CROATIA", "CUBA",
+  "IVORY COAST", "DENMARK", "DJIBOUTI", "DOMINICAN REPUBLIC", "EL SALVADOR",
+  "SPAIN", "ESTONIA", "FINLAND", "FRANCE", "GABON",
+  "GHANA", "GREECE", "GUERNSEY", "GUINEA", "EQUATORIAL GUINEA",
+  "HONG KONG", "HUNGARY", "INDIA", "INDONESIA", "ISLAMIC REPUBLIC OF IRAN",
+  "IRAQ", "IRELAND", "ICELAND", "ISRAEL", "ITALY",
+  "JAPAN", "JERSEY", "JORDAN", "KAZAKHSTAN", "KENYA",
+  "KUWAIT", "LAO PEOPLE'S DEMOCRATIC REPUBLIC", "LEBANON", "LIBYAN ARAB JAMAHIRIYA", "LUXEMBOURG",
+  "THE FORMER YUGOSLAV REPUBLIC OF MACEDONIA", "MALAYSIA", "MALI", "MALTA", "MOROCCO",
+  "MARSHALL ISLANDS", "MAURITIUS", "MEXICO", "MOZAMBIQUE", "NIGERIA",
+  "NORWAY", "NEW ZEALAND", "OMAN", "UGANDA", "PAKISTAN",
+  "PANAMA", "PAPUA NEW GUINEA", "NETHERLANDS", "PHILIPPINES", "POLAND",
+  "PUERTO RICO", "PORTUGAL", "PERU", "QATAR", "UNITED KINGDOM",
+  "RUSSIAN FEDERATION", "SERBIA", "SINGAPORE", "SLOVAKIA", "SLOVENIA",
+  "SOMALIA", "SUDAN", "SWITZERLAND", "SWEDEN", "TAIWAN, PROVINCE OF CHINA",
+  "CHAD", "CZECH REPUBLIC", "THAILAND", "TOGO", "TRINIDAD AND TOBAGO",
+  "TUNISIA", "TURKEY", "UKRAINE", "URUGUAY", "VENEZUELA",
+  "VIET NAM", "WALLIS AND FUTUNA", "YEMEN", "ZIMBABWE", "EGYPT",
+  "UNITED ARAB EMIRATES", "UNITED STATES", "ISLE OF MAN", "BRITISH VIRGIN ISLANDS"
+];
+
+// Méthodes de calcul d'intérêts disponibles
+const INTEREST_CALCULATION_METHODS = [
+  "Mois de 30 jours/Année de 360 jours",
+  "Nombre de jours réel / Nombre de jours réel", 
+  "BOND",
+  "Nombre de jours réel/Année de 360 jours",
+  "Mois de 30 jours/Année de 365 jours",
+  "Nombre de jours réel/Année de 365 jours",
+  "BANK",
+  "G365",
+  "G5/6",
+  "M30",
+  "M30E",
+  "n/a"
+];
+
+// Mapping des méthodes de calcul d'intérêts avec leurs informations associées
+const INTEREST_METHOD_MAPPING: Record<string, {finalMethod: string, description: string, type: string}> = {
+  "Mois de 30 jours/Année de 360 jours": { finalMethod: "30/360", description: "Convention 30/360 - Mois de 30 jours", type: "year fraction" },
+  "Nombre de jours réel / Nombre de jours réel": { finalMethod: "Actual/Actual", description: "Nombre de jours réels sur nombre de jours réels", type: "year fraction" },
+  "BOND": { finalMethod: "Bond", description: "Méthode obligataire standard", type: "year fraction" },
+  "Nombre de jours réel/Année de 360 jours": { finalMethod: "Actual/360", description: "Jours réels sur base 360 jours", type: "Actual/360" },
+  "Mois de 30 jours/Année de 365 jours": { finalMethod: "30/365", description: "Convention 30/365", type: "30/365" },
+  "Nombre de jours réel/Année de 365 jours": { finalMethod: "Actual/365", description: "Jours réels sur base 365 jours", type: "Actual/365" },
+  "BANK": { finalMethod: "Actual/360", description: "Méthode bancaire standard", type: "Actual/360" },
+  "G365": { finalMethod: "Actual/365", description: "Méthode G365 - base 365", type: "Actual/365" },
+  "G5/6": { finalMethod: "G5/6", description: "Méthode spéciale G5/6", type: "year fraction" },
+  "M30": { finalMethod: "30/360", description: "Méthode M30 - base 30/360", type: "year fraction" },
+  "M30E": { finalMethod: "30E/360", description: "Méthode M30E - 30E/360 européenne", type: "year fraction" },
+  "n/a": { finalMethod: "default Actual/360", description: "Méthode par défaut", type: "default Actual/360" }
+};
+
+// Mapping des pays avec leurs informations associées (zone, group, europe/na, ocde)
+const COUNTRY_MAPPING: Record<string, {zone: string, group: string, europeNa: string, ocde: string}> = {
+  "SOUTH AFRICA": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "ALGERIA": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "GERMANY": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "Y" },
+  "ANGOLA": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "NETHERLANDS ANTILLES": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "N" },
+  "SAUDI ARABIA": { zone: "Middle East", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "ARGENTINA": { zone: "South America", group: "Americas", europeNa: "Others", ocde: "N" },
+  "AUSTRALIA": { zone: "Asia Pacific", group: "APAC", europeNa: "Others", ocde: "Y" },
+  "AUSTRIA": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "Y" },
+  "AZERBAIJAN": { zone: "Middle East", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "BAHAMAS": { zone: "North America", group: "Americas", europeNa: "North America", ocde: "N" },
+  "BAHRAIN": { zone: "Middle East", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "BELGIUM": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "Y" },
+  "BERMUDA": { zone: "North America", group: "Americas", europeNa: "North America", ocde: "N" },
+  "BOSNIA AND HERZEGOVINA": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "N" },
+  "BRAZIL": { zone: "South America", group: "Americas", europeNa: "Others", ocde: "N" },
+  "BULGARIA": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "N" },
+  "CAMBODIA": { zone: "Asia Pacific", group: "APAC", europeNa: "Others", ocde: "N" },
+  "CAMEROON": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "CANADA": { zone: "North America", group: "Americas", europeNa: "North America", ocde: "Y" },
+  "CAYMAN ISLANDS": { zone: "North America", group: "Americas", europeNa: "North America", ocde: "N" },
+  "CHILE": { zone: "South America", group: "Americas", europeNa: "Others", ocde: "Y" },
+  "CHINA": { zone: "Asia Pacific", group: "APAC", europeNa: "Others", ocde: "N" },
+  "CYPRUS": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "N" },
+  "COLOMBIA": { zone: "South America", group: "Americas", europeNa: "Others", ocde: "N" },
+  "CONGO": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "DEMOCRATIC REPUBLIC OF THE CONGO": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "REPUBLIC OF KOREA": { zone: "Asia Pacific", group: "APAC", europeNa: "Others", ocde: "Y" },
+  "CROATIA": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "N" },
+  "CUBA": { zone: "South America", group: "Americas", europeNa: "Others", ocde: "N" },
+  "IVORY COAST": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "DENMARK": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "Y" },
+  "DJIBOUTI": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "DOMINICAN REPUBLIC": { zone: "South America", group: "Americas", europeNa: "Others", ocde: "N" },
+  "EL SALVADOR": { zone: "South America", group: "Americas", europeNa: "Others", ocde: "N" },
+  "SPAIN": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "Y" },
+  "ESTONIA": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "Y" },
+  "FINLAND": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "Y" },
+  "FRANCE": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "Y" },
+  "GABON": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "GHANA": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "GREECE": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "Y" },
+  "GUERNSEY": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "N" },
+  "GUINEA": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "EQUATORIAL GUINEA": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "HONG KONG": { zone: "Asia Pacific", group: "APAC", europeNa: "Others", ocde: "N" },
+  "HUNGARY": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "Y" },
+  "INDIA": { zone: "Asia Pacific", group: "APAC", europeNa: "Others", ocde: "N" },
+  "INDONESIA": { zone: "Asia Pacific", group: "APAC", europeNa: "Others", ocde: "N" },
+  "ISLAMIC REPUBLIC OF IRAN": { zone: "Middle East", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "IRAQ": { zone: "Middle East", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "IRELAND": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "Y" },
+  "ICELAND": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "Y" },
+  "ISRAEL": { zone: "Middle East", group: "EMEA", europeNa: "Others", ocde: "Y" },
+  "ITALY": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "Y" },
+  "JAPAN": { zone: "Asia Pacific", group: "APAC", europeNa: "Others", ocde: "Y" },
+  "JERSEY": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "N" },
+  "JORDAN": { zone: "Middle East", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "KAZAKHSTAN": { zone: "Middle East", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "KENYA": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "KUWAIT": { zone: "Middle East", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "LAO PEOPLE'S DEMOCRATIC REPUBLIC": { zone: "Asia Pacific", group: "APAC", europeNa: "Others", ocde: "N" },
+  "LEBANON": { zone: "Middle East", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "LIBYAN ARAB JAMAHIRIYA": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "LUXEMBOURG": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "Y" },
+  "THE FORMER YUGOSLAV REPUBLIC OF MACEDONIA": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "N" },
+  "MALAYSIA": { zone: "Asia Pacific", group: "APAC", europeNa: "Others", ocde: "N" },
+  "MALI": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "MALTA": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "N" },
+  "MOROCCO": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "MARSHALL ISLANDS": { zone: "Asia Pacific", group: "APAC", europeNa: "Others", ocde: "N" },
+  "MAURITIUS": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "MEXICO": { zone: "South America", group: "Americas", europeNa: "Others", ocde: "Y" },
+  "MOZAMBIQUE": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "NIGERIA": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "NORWAY": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "Y" },
+  "NEW ZEALAND": { zone: "Asia Pacific", group: "APAC", europeNa: "Others", ocde: "Y" },
+  "OMAN": { zone: "Middle East", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "UGANDA": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "PAKISTAN": { zone: "Asia Pacific", group: "APAC", europeNa: "Others", ocde: "N" },
+  "PANAMA": { zone: "South America", group: "Americas", europeNa: "Others", ocde: "N" },
+  "PAPUA NEW GUINEA": { zone: "Asia Pacific", group: "APAC", europeNa: "Others", ocde: "N" },
+  "NETHERLANDS": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "Y" },
+  "PHILIPPINES": { zone: "Asia Pacific", group: "APAC", europeNa: "Others", ocde: "N" },
+  "POLAND": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "Y" },
+  "PUERTO RICO": { zone: "North America", group: "Americas", europeNa: "North America", ocde: "N" },
+  "PORTUGAL": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "Y" },
+  "PERU": { zone: "South America", group: "Americas", europeNa: "Others", ocde: "N" },
+  "QATAR": { zone: "Middle East", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "UNITED KINGDOM": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "Y" },
+  "RUSSIAN FEDERATION": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "N" },
+  "SERBIA": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "N" },
+  "SINGAPORE": { zone: "Asia Pacific", group: "APAC", europeNa: "Others", ocde: "N" },
+  "SLOVAKIA": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "Y" },
+  "SLOVENIA": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "Y" },
+  "SOMALIA": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "SUDAN": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "SWITZERLAND": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "Y" },
+  "SWEDEN": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "Y" },
+  "TAIWAN, PROVINCE OF CHINA": { zone: "Asia Pacific", group: "APAC", europeNa: "Others", ocde: "N" },
+  "CHAD": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "CZECH REPUBLIC": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "Y" },
+  "THAILAND": { zone: "Asia Pacific", group: "APAC", europeNa: "Others", ocde: "N" },
+  "TOGO": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "TRINIDAD AND TOBAGO": { zone: "South America", group: "Americas", europeNa: "Others", ocde: "N" },
+  "TUNISIA": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "TURKEY": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "Y" },
+  "UKRAINE": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "N" },
+  "URUGUAY": { zone: "South America", group: "Americas", europeNa: "Others", ocde: "N" },
+  "VENEZUELA": { zone: "South America", group: "Americas", europeNa: "Others", ocde: "N" },
+  "VIET NAM": { zone: "Asia Pacific", group: "APAC", europeNa: "Others", ocde: "N" },
+  "WALLIS AND FUTUNA": { zone: "Asia Pacific", group: "APAC", europeNa: "Others", ocde: "N" },
+  "YEMEN": { zone: "Middle East", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "ZIMBABWE": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "EGYPT": { zone: "Africa", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "UNITED ARAB EMIRATES": { zone: "Middle East", group: "EMEA", europeNa: "Others", ocde: "N" },
+  "UNITED STATES": { zone: "North America", group: "Americas", europeNa: "North America", ocde: "Y" },
+  "ISLE OF MAN": { zone: "Europe", group: "EMEA", europeNa: "Europe", ocde: "N" },
+  "BRITISH VIRGIN ISLANDS": { zone: "North America", group: "Americas", europeNa: "North America", ocde: "N" }
+};
 
 // Extend the default parameters type to include priceFactor and spread
 interface CalculationParameters {
@@ -47,10 +230,36 @@ const Parameters = () => {
     spread: 0.2
   });
   
+  // État pour la sélection des pays
+  const [selectedCountry, setSelectedCountry] = useState<string>("FRANCE");
+  const [countryInfo, setCountryInfo] = useState(COUNTRY_MAPPING["FRANCE"] || {zone: "", group: "", europeNa: "", ocde: ""});
+  
+  // État pour la sélection des méthodes de calcul d'intérêts
+  const [selectedInterestMethod, setSelectedInterestMethod] = useState<string>("n/a");
+  const [interestMethodInfo, setInterestMethodInfo] = useState(INTEREST_METHOD_MAPPING["n/a"] || {finalMethod: "", description: "", type: ""});
+  
+  // Update country info when country changes
+  useEffect(() => {
+    if (selectedCountry && COUNTRY_MAPPING[selectedCountry]) {
+      setCountryInfo(COUNTRY_MAPPING[selectedCountry]);
+    } else {
+      setCountryInfo({zone: "", group: "", europeNa: "", ocde: ""});
+    }
+  }, [selectedCountry]);
+  
+  // Update interest method info when method changes
+  useEffect(() => {
+    if (selectedInterestMethod && INTEREST_METHOD_MAPPING[selectedInterestMethod]) {
+      setInterestMethodInfo(INTEREST_METHOD_MAPPING[selectedInterestMethod]);
+    } else {
+      setInterestMethodInfo({ finalMethod: '', description: '', type: '' });
+    }
+  }, [selectedInterestMethod]);
+  
   const handleSaveParameters = () => {
     toast({
-      title: "Paramètres enregistrés",
-      description: "Les paramètres ont été mis à jour avec succès.",
+      title: "Parameters Saved",
+      description: "Parameters have been successfully updated.",
       variant: "default"
     });
   };
@@ -61,8 +270,10 @@ const Parameters = () => {
       priceFactor: 1.5,
       spread: 0.2
     });
+    setSelectedCountry("FRANCE");
+    setSelectedInterestMethod("n/a");
     toast({
-      title: "Paramètres réinitialisés",
+      title: "Paramètres Réinitialisés",
       description: "Les paramètres ont été restaurés aux valeurs par défaut.",
       variant: "default"
     });
@@ -70,28 +281,29 @@ const Parameters = () => {
   
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Paramètres de Calcul</h1>
+      <h1 className="text-2xl font-bold">Calculation Parameters</h1>
       
       <Tabs defaultValue="general">
         <TabsList>
-          <TabsTrigger value="general">Généraux</TabsTrigger>
-          <TabsTrigger value="risk">Risque</TabsTrigger>
+          <TabsTrigger value="general">General</TabsTrigger>
+          <TabsTrigger value="risk">Risk</TabsTrigger>
           <TabsTrigger value="pricing">Pricing</TabsTrigger>
-          <TabsTrigger value="stress">Scénarios de Stress</TabsTrigger>
+          <TabsTrigger value="stress">Stress Scenarios</TabsTrigger>
+          <TabsTrigger value="setup">Setup</TabsTrigger>
         </TabsList>
         
         <TabsContent value="general">
           <Card>
             <CardHeader>
-              <CardTitle>Paramètres Généraux</CardTitle>
+              <CardTitle>General Parameters</CardTitle>
               <CardDescription>
-                Ces paramètres sont utilisés dans tous les calculs financiers.
+                These parameters are used in all financial calculations.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <Label htmlFor="targetROE">ROE Cible (%)</Label>
+                  <Label htmlFor="targetROE">Target ROE (%)</Label>
                   <div className="flex items-center space-x-2">
                     <Slider 
                       id="targetROE"
@@ -110,12 +322,12 @@ const Parameters = () => {
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Rentabilité minimale exigée par les actionnaires
+                    Minimum return required by shareholders
                   </p>
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="corporateTaxRate">Taux d'Imposition (%)</Label>
+                  <Label htmlFor="corporateTaxRate">Corporate Tax Rate (%)</Label>
                   <div className="flex items-center space-x-2">
                     <Slider 
                       id="corporateTaxRate"
@@ -134,12 +346,12 @@ const Parameters = () => {
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Taux d'imposition sur les bénéfices
+                    Tax rate on corporate profits
                   </p>
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="capitalRatio">Ratio de Capital (%)</Label>
+                  <Label htmlFor="capitalRatio">Capital Ratio (%)</Label>
                   <div className="flex items-center space-x-2">
                     <Slider 
                       id="capitalRatio"
@@ -158,20 +370,20 @@ const Parameters = () => {
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Ratio CET1 (Common Equity Tier 1)
+                    CET1 Ratio (Common Equity Tier 1)
                   </p>
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="useRegParameters">Utiliser Paramètres Réglementaires</Label>
+                  <Label htmlFor="useRegParameters">Use Regulatory Parameters</Label>
                   <div className="flex items-center space-x-2">
                     <Switch id="useRegParameters" />
                     <Label htmlFor="useRegParameters">
-                      Activer
+                      Enable
                     </Label>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Utiliser les paramètres standards de Bâle III
+                    Use Basel III standard parameters
                   </p>
                 </div>
               </div>
@@ -182,15 +394,15 @@ const Parameters = () => {
         <TabsContent value="risk">
           <Card>
             <CardHeader>
-              <CardTitle>Paramètres de Risque</CardTitle>
+              <CardTitle>Risk Parameters</CardTitle>
               <CardDescription>
-                Paramètres utilisés dans les calculs de risque et d'expected loss.
+                Parameters used in risk calculations and expected loss.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <Label htmlFor="fundingCost">Coût de Funding (%)</Label>
+                  <Label htmlFor="fundingCost">Funding Cost (%)</Label>
                   <div className="flex items-center space-x-2">
                     <Slider 
                       id="fundingCost"
@@ -209,12 +421,12 @@ const Parameters = () => {
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Coût moyen de refinancement
+                    Average refinancing cost
                   </p>
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="operationalCostRatio">Coûts Opérationnels (%)</Label>
+                  <Label htmlFor="operationalCostRatio">Operational Costs (%)</Label>
                   <div className="flex items-center space-x-2">
                     <Slider 
                       id="operationalCostRatio"
@@ -233,16 +445,16 @@ const Parameters = () => {
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Ratio de coûts opérationnels en % du montant du prêt
+                    Operational cost ratio as % of loan amount
                   </p>
                 </div>
               </div>
               
-              <h3 className="text-lg font-medium mt-4">PD par Notation</h3>
+              <h3 className="text-lg font-medium mt-4">PD by Rating</h3>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Notation</TableHead>
+                    <TableHead>Rating</TableHead>
                     <TableHead className="text-right">PD</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
@@ -288,7 +500,7 @@ const Parameters = () => {
                             setParameters({...parameters, pdCurve: newPdCurve});
                           }}
                         >
-                          Supprimer
+                          Remove
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -302,7 +514,7 @@ const Parameters = () => {
                   setParameters({...parameters, pdCurve: newPdCurve});
                 }}
               >
-                Ajouter une Notation
+                Add Rating
               </Button>
             </CardContent>
           </Card>
@@ -313,13 +525,13 @@ const Parameters = () => {
             <CardHeader>
               <CardTitle>Pricing</CardTitle>
               <CardDescription>
-                Paramètres utilisés dans les calculs de pricing.
+                Parameters used in pricing calculations.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <Label htmlFor="priceFactor">Facteur de Pricing</Label>
+                  <Label htmlFor="priceFactor">Pricing Factor</Label>
                   <div className="flex items-center space-x-2">
                     <Input 
                       id="priceFactor"
@@ -336,7 +548,7 @@ const Parameters = () => {
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Facteur de pricing pour les produits financiers
+                    Pricing factor for financial products
                   </p>
                 </div>
                 
@@ -358,7 +570,7 @@ const Parameters = () => {
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Spreads pour les produits financiers
+                    Spreads for financial products
                   </p>
                 </div>
               </div>
@@ -369,19 +581,19 @@ const Parameters = () => {
         <TabsContent value="stress">
           <Card>
             <CardHeader>
-              <CardTitle>Scénarios de Stress</CardTitle>
+              <CardTitle>Stress Scenarios</CardTitle>
               <CardDescription>
-                Configurez des scénarios prédéfinis pour les analyses de sensibilité.
+                Configure predefined scenarios for sensitivity analysis.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Nom du Scénario</TableHead>
+                    <TableHead>Scenario Name</TableHead>
                     <TableHead>PD x</TableHead>
                     <TableHead>LGD x</TableHead>
-                    <TableHead>Taux Δ</TableHead>
+                    <TableHead>Rate Δ</TableHead>
                     <TableHead>Spread Δ</TableHead>
                     <TableHead className="w-[50px]"></TableHead>
                   </TableRow>
@@ -410,7 +622,7 @@ const Parameters = () => {
                   className="flex items-center gap-2"
                 >
                   <PlusCircle className="h-4 w-4" />
-                  <span>Ajouter un Scénario</span>
+                  <span>Add Scenario</span>
                 </Button>
                 
                 <Button 
@@ -418,8 +630,165 @@ const Parameters = () => {
                   onClick={handleSaveParameters}
                 >
                   <Save className="h-4 w-4" />
-                  <span>Sauvegarder</span>
+                  <span>Save</span>
                 </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        
+        <TabsContent value="setup">
+          <Card>
+            <CardHeader>
+              <CardTitle>Country Setup</CardTitle>
+              <CardDescription>
+                Select the default country for operations and view its associated information.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 items-end">
+                  {/* Country Selection */}
+                  <div className="space-y-2">
+                    <Label htmlFor="defaultCountry">Country</Label>
+                    <select 
+                      id="defaultCountry"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      value={selectedCountry}
+                      onChange={(e) => setSelectedCountry(e.target.value)}
+                    >
+                      <option value="">-- Select a country --</option>
+                      {COUNTRIES.map((country) => (
+                        <option key={country} value={country}>
+                          {country}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  {/* Zone */}
+                  <div className="space-y-2">
+                    <Label>Zone</Label>
+                    <div className="flex h-10 w-full rounded-md border border-input bg-muted px-3 py-2 text-sm">
+                      {countryInfo.zone || "-"}
+                    </div>
+                  </div>
+                  
+                  {/* Group */}
+                  <div className="space-y-2">
+                    <Label>Group</Label>
+                    <div className="flex h-10 w-full rounded-md border border-input bg-muted px-3 py-2 text-sm">
+                      {countryInfo.group || "-"}
+                    </div>
+                  </div>
+                  
+                  {/* Europe/North America */}
+                  <div className="space-y-2">
+                    <Label>Europe/North America</Label>
+                    <div className="flex h-10 w-full rounded-md border border-input bg-muted px-3 py-2 text-sm">
+                      {countryInfo.europeNa || "-"}
+                    </div>
+                  </div>
+                  
+                  {/* OCDE */}
+                  <div className="space-y-2">
+                    <Label>OECD</Label>
+                    <div className="flex h-10 w-full rounded-md border border-input bg-muted px-3 py-2 text-sm items-center justify-center">
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                        countryInfo.ocde === 'Y' 
+                          ? 'bg-green-100 text-green-800' 
+                          : countryInfo.ocde === 'N' 
+                            ? 'bg-red-100 text-red-800' 
+                            : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {countryInfo.ocde === 'Y' ? 'Yes' : countryInfo.ocde === 'N' ? 'No' : '-'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                
+                <p className="text-xs text-muted-foreground">
+                  Select a country to view its geographical zone, regional group, Europe/North America classification, and OECD membership status.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+          
+          {/* Interest Calculation Methods Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Méthodes de Calcul d'Intérêts</CardTitle>
+              <CardDescription>
+                Sélectionnez la méthode de calcul d'intérêts par défaut et consultez ses informations associées.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-end">
+                  {/* Interest Method Selection */}
+                  <div className="space-y-2">
+                    <Label htmlFor="interestMethod">Méthode de Calcul</Label>
+                    <select 
+                      id="interestMethod"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      value={selectedInterestMethod}
+                      onChange={(e) => setSelectedInterestMethod(e.target.value)}
+                    >
+                      <option value="">-- Sélectionner une méthode --</option>
+                      {INTEREST_CALCULATION_METHODS.map((method) => (
+                        <option key={method} value={method}>
+                          {method}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  {/* Final Method */}
+                  <div className="space-y-2">
+                    <Label>Méthode Finale</Label>
+                    <div className="flex h-10 w-full rounded-md border border-input bg-muted px-3 py-2 text-sm items-center">
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                        interestMethodInfo.finalMethod.includes('Actual') 
+                          ? 'bg-blue-100 text-blue-800' 
+                          : interestMethodInfo.finalMethod.includes('30') 
+                            ? 'bg-green-100 text-green-800' 
+                            : interestMethodInfo.finalMethod.includes('default')
+                              ? 'bg-orange-100 text-orange-800'
+                              : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {interestMethodInfo.finalMethod || "-"}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {/* Type */}
+                  <div className="space-y-2">
+                    <Label>Type</Label>
+                    <div className="flex h-10 w-full rounded-md border border-input bg-muted px-3 py-2 text-sm items-center">
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                        interestMethodInfo.type === 'year fraction' 
+                          ? 'bg-purple-100 text-purple-800' 
+                          : interestMethodInfo.type.includes('Actual') 
+                            ? 'bg-cyan-100 text-cyan-800' 
+                            : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {interestMethodInfo.type || "-"}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {/* Description */}
+                  <div className="space-y-2">
+                    <Label>Description</Label>
+                    <div className="flex h-10 w-full rounded-md border border-input bg-muted px-3 py-2 text-sm items-center">
+                      {interestMethodInfo.description || "-"}
+                    </div>
+                  </div>
+                </div>
+                
+                <p className="text-xs text-muted-foreground">
+                  Sélectionnez une méthode de calcul d'intérêts pour voir sa méthode finale, son type et sa description.
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -428,10 +797,10 @@ const Parameters = () => {
       
       <div className="flex justify-end space-x-2">
         <Button variant="outline" onClick={handleResetToDefault}>
-          Restaurer les Valeurs par Défaut
+          Restore Default Values
         </Button>
         <Button onClick={handleSaveParameters}>
-          Enregistrer les Paramètres
+          Save Parameters
         </Button>
       </div>
     </div>

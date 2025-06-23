@@ -25,7 +25,7 @@ const AnalyticsPerformance = () => {
     defaultCalculationParameters
   );
   
-  // Top 5 des prêts par ROE
+  // Top 5 loans by ROE
   const topLoansByROE = [...samplePortfolio.loans]
     .sort((a, b) => b.metrics.roe - a.metrics.roe)
     .slice(0, 5)
@@ -35,7 +35,7 @@ const AnalyticsPerformance = () => {
       raroc: loan.metrics.raroc * 100
     }));
   
-  // Données pour l'évolution des performances (données simulées)
+  // Data for performance evolution (simulated data)
   const performanceEvolutionData = [
     { name: 'Q1 2023', roe: 9.2, raroc: 10.5, targetRoe: 10 },
     { name: 'Q2 2023', roe: 9.5, raroc: 10.8, targetRoe: 10 },
@@ -44,7 +44,7 @@ const AnalyticsPerformance = () => {
     { name: 'Q1 2024', roe: 10.5, raroc: 11.8, targetRoe: 10 },
   ];
   
-  // Données pour le graphique des marges (données simulées)
+  // Data for margin chart (simulated data)
   const marginAnalysisData = samplePortfolio.loans.map(loan => ({
     name: loan.name.substring(0, 15) + (loan.name.length > 15 ? '...' : ''),
     margin: loan.margin * 100,
@@ -54,7 +54,7 @@ const AnalyticsPerformance = () => {
   
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Analyse de Performance</h1>
+      <h1 className="text-2xl font-bold">Performance Analysis</h1>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card>
@@ -69,7 +69,7 @@ const AnalyticsPerformance = () => {
               {(portfolioMetrics.portfolioROE * 100).toFixed(2)}%
             </div>
             <p className="text-sm text-muted-foreground mt-1">
-              Cible: {(defaultCalculationParameters.targetROE * 100).toFixed(2)}%
+              Target: {(defaultCalculationParameters.targetROE * 100).toFixed(2)}%
             </p>
           </CardContent>
         </Card>
@@ -87,7 +87,7 @@ const AnalyticsPerformance = () => {
         
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-lg">Capital Consommé</CardTitle>
+            <CardTitle className="text-lg">Capital Consumed</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">
@@ -98,7 +98,7 @@ const AnalyticsPerformance = () => {
               }).format(portfolioMetrics.totalRWA * defaultCalculationParameters.capitalRatio)}
             </div>
             <p className="text-sm text-muted-foreground mt-1">
-              {(portfolioMetrics.totalRWA * defaultCalculationParameters.capitalRatio / portfolioMetrics.totalExposure * 100).toFixed(2)}% de l'exposition
+              {(portfolioMetrics.totalRWA * defaultCalculationParameters.capitalRatio / portfolioMetrics.totalExposure * 100).toFixed(2)}% of exposure
             </p>
           </CardContent>
         </Card>
@@ -107,14 +107,14 @@ const AnalyticsPerformance = () => {
       <Tabs defaultValue="top-performers">
         <TabsList>
           <TabsTrigger value="top-performers">Top Performers</TabsTrigger>
-          <TabsTrigger value="performance-evolution">Évolution Performance</TabsTrigger>
-          <TabsTrigger value="margin-analysis">Analyse des Marges</TabsTrigger>
+          <TabsTrigger value="performance-evolution">Performance Evolution</TabsTrigger>
+          <TabsTrigger value="margin-analysis">Margin Analysis</TabsTrigger>
         </TabsList>
         
         <TabsContent value="top-performers">
           <Card>
             <CardHeader>
-              <CardTitle>Top 5 Prêts par ROE</CardTitle>
+              <CardTitle>Top 5 Loans by ROE</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-80">
@@ -137,7 +137,7 @@ const AnalyticsPerformance = () => {
         <TabsContent value="performance-evolution">
           <Card>
             <CardHeader>
-              <CardTitle>Évolution de la Performance</CardTitle>
+              <CardTitle>Performance Evolution</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-80">
@@ -166,7 +166,7 @@ const AnalyticsPerformance = () => {
                       type="monotone" 
                       dataKey="targetRoe" 
                       stroke="#FF3B5B" 
-                      name="ROE Cible" 
+                      name="Target ROE" 
                       strokeDasharray="5 5" 
                       strokeWidth={2} 
                     />
@@ -180,7 +180,7 @@ const AnalyticsPerformance = () => {
         <TabsContent value="margin-analysis">
           <Card>
             <CardHeader>
-              <CardTitle>Analyse des Marges</CardTitle>
+              <CardTitle>Margin Analysis</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-80">
@@ -191,14 +191,14 @@ const AnalyticsPerformance = () => {
                     <YAxis type="category" dataKey="name" width={100} />
                     <Tooltip formatter={(value: number) => `${value.toFixed(2)}%`} />
                     <Legend />
-                    <Bar dataKey="margin" fill="#2D5BFF" name="Marge Brute" />
-                    <Bar dataKey="netMargin" fill="#00C48C" name="Marge Nette" />
+                    <Bar dataKey="margin" fill="#2D5BFF" name="Gross Margin" />
+                    <Bar dataKey="netMargin" fill="#00C48C" name="Net Margin" />
                     <Area 
                       type="monotone" 
                       dataKey="costOfRisk" 
                       fill="#FF3B5B" 
                       stroke="#FF3B5B" 
-                      name="Coût du Risque" 
+                      name="Cost of Risk" 
                     />
                   </ComposedChart>
                 </ResponsiveContainer>

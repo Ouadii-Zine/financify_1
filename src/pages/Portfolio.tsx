@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -30,9 +29,9 @@ import {
   Scatter,
   ZAxis
 } from 'recharts';
-import { samplePortfolio, defaultCalculationParameters } from '@/data/sampleData';
+import { defaultCalculationParameters } from '@/data/sampleData';
 import { calculatePortfolioMetrics, calculateLoanMetrics } from '@/utils/financialCalculations';
-import { Loan } from '@/types/finance';
+import { Loan, PortfolioMetrics, Portfolio as PortfolioType } from '@/types/finance';
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -48,27 +47,58 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from '@/hooks/use-toast';
 import ExcelTemplateService from '@/services/ExcelTemplateService';
+import LoanDataService, { LOANS_UPDATED_EVENT } from '@/services/LoanDataService';
 
-// Couleurs pour les graphiques
+// Colors for charts
 const COLORS = ['#00C48C', '#2D5BFF', '#FFB800', '#FF3B5B', '#1A2C42', '#9B87F5', '#7E69AB'];
 
 const Portfolio = () => {
   const navigate = useNavigate();
-  const [loans, setLoans] = useState<Loan[]>(samplePortfolio.loans);
-  const [portfolioMetrics, setPortfolioMetrics] = useState(calculatePortfolioMetrics(loans, defaultCalculationParameters));
+  const loanDataService = LoanDataService.getInstance();
+  const [loans, setLoans] = useState<Loan[]>([]);
+  const [portfolioMetrics, setPortfolioMetrics] = useState<PortfolioMetrics>({
+    totalExposure: 0,
+    totalDrawn: 0,
+    totalUndrawn: 0,
+    totalExpectedLoss: 0,
+    weightedAveragePD: 0,
+    weightedAverageLGD: 0,
+    totalRWA: 0,
+    portfolioROE: 0,
+    portfolioRAROC: 0,
+    evaSumIntrinsic: 0,
+    evaSumSale: 0,
+    diversificationBenefit: 0
+  });
   
   useEffect(() => {
-    // Calculer les métriques pour chaque prêt
-    const updatedLoans = loans.map(loan => {
-      const metrics = calculateLoanMetrics(loan, defaultCalculationParameters);
-      return { ...loan, metrics };
-    });
+    // Load data from localStorage
+    loanDataService.loadFromLocalStorage();
     
-    setLoans(updatedLoans);
-    setPortfolioMetrics(calculatePortfolioMetrics(updatedLoans, defaultCalculationParameters));
+    // Get loans
+    const userLoans = loanDataService.getLoans();
+    
+    // Update state with user loans
+    setLoans(userLoans);
+    
+    // Calculate portfolio metrics
+    setPortfolioMetrics(calculatePortfolioMetrics(userLoans, defaultCalculationParameters));
+    
+    // Add listener for loan updates
+    const handleLoansUpdated = (event: CustomEvent) => {
+      setLoans(event.detail);
+      setPortfolioMetrics(calculatePortfolioMetrics(event.detail, defaultCalculationParameters));
+    };
+    
+    window.addEventListener(LOANS_UPDATED_EVENT, handleLoansUpdated as EventListener);
+    
+    // Cleanup listener on unmount
+    return () => {
+      window.removeEventListener(LOANS_UPDATED_EVENT, handleLoansUpdated as EventListener);
+    };
   }, []);
   
-  // Distribution des EVA par secteur
+  // EVA distribution by sector
   const evaBySector = loans.reduce((acc, loan) => {
     const existingItem = acc.find(item => item.name === loan.sector);
     if (existingItem) {
@@ -84,7 +114,7 @@ const Portfolio = () => {
     return acc;
   }, [] as { name: string; value: number; count: number }[]);
   
-  // Données pour le graphique EVA par prêt
+  // Data for EVA by loan chart
   const loanEvaData = loans.map(loan => ({
     name: loan.name,
     evaIntrinsic: loan.metrics?.evaIntrinsic || 0,
@@ -92,68 +122,77 @@ const Portfolio = () => {
     outstandingAmount: loan.outstandingAmount
   })).sort((a, b) => b.evaIntrinsic - a.evaIntrinsic);
   
-  // Données pour le graphique ROE vs Risque (EL/Encours)
+  // Data for ROE vs Risk chart (EL/Outstanding)
   const roeVsRiskData = loans.map(loan => ({
     name: loan.name,
-    x: (loan.metrics?.expectedLoss || 0) / loan.outstandingAmount * 100, // EL/Encours en %
-    y: (loan.metrics?.roe || 0) * 100, // ROE en %
-    z: loan.outstandingAmount / 1000000, // Taille de la bulle (Encours en millions)
+    x: (loan.metrics?.expectedLoss || 0) / loan.outstandingAmount * 100, // EL/Outstanding in %
+    y: (loan.metrics?.roe || 0) * 100, // ROE in %
+    z: loan.outstandingAmount / 1000000, // Bubble size (Outstanding in millions)
     sector: loan.sector
   }));
   
-  // Formatter pour afficher les montants en euros
+  // Formatter to display amounts in euros
   const formatCurrency = (value: number, currency: string = 'EUR') => {
-    return new Intl.NumberFormat('fr-FR', { 
+    return new Intl.NumberFormat('en-US', { 
       style: 'currency', 
       currency: currency, 
       maximumFractionDigits: 0 
     }).format(value);
   };
   
-  // Gestionnaires d'événements pour les boutons
+  // Event handlers for buttons
   const handleImport = () => {
-    console.log("Redirection vers la page d'import");
+    console.log("Redirect to import page");
     navigate('/import');
   };
   
   const handleExport = () => {
-    console.log("Export du portefeuille");
+    console.log("Export portfolio");
     toast({
-      title: "Export en cours",
-      description: "Le portefeuille est en cours d'exportation au format Excel...",
+      title: "Export in progress",
+      description: "The portfolio is being exported to Excel format...",
       variant: "default"
     });
     
     try {
-      // Utiliser le service d'export
-      ExcelTemplateService.exportData(samplePortfolio, 'Performance', 'excel');
+      // Create a portfolio object with current data
+      const portfolio: PortfolioType = {
+        id: 'financify-portfolio',
+        name: 'Financify Portfolio',
+        description: 'Complete portfolio including all loans',
+        loans: loans,
+        metrics: portfolioMetrics
+      };
+      
+      // Use export service
+      ExcelTemplateService.exportData(portfolio, 'Performance', 'excel');
     } catch (error) {
-      console.error("Erreur lors de l'export du portefeuille:", error);
+      console.error("Error exporting portfolio:", error);
       toast({
-        title: "Erreur",
-        description: "Une erreur est survenue lors de l'export du portefeuille.",
+        title: "Error",
+        description: "An error occurred while exporting the portfolio.",
         variant: "destructive"
       });
     }
   };
   
   const handleNewLoan = () => {
-    console.log("Redirection vers la création d'un nouveau prêt");
+    console.log("Redirect to new loan creation");
     navigate('/loans/new');
     
-    // Notification pour indiquer à l'utilisateur qu'il est redirigé
+    // Notification to indicate to the user that they are being redirected
     toast({
-      title: "Création d'un nouveau prêt",
-      description: "Vous êtes redirigé vers le formulaire de création d'un nouveau prêt.",
+      title: "Creating a new loan",
+      description: "You are being redirected to the new loan creation form.",
       variant: "default"
     });
   };
 
-  // Reste du code inchangé...
+  // Rest of the code remains unchanged...
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Portefeuille de Prêts</h1>
+        <h1 className="text-2xl font-bold">Loan Portfolio</h1>
         
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={handleImport}>
@@ -166,7 +205,7 @@ const Portfolio = () => {
           </Button>
           <Button variant="default" size="sm" onClick={handleNewLoan}>
             <Plus className="h-4 w-4 mr-2" />
-            Nouveau Prêt
+            New Loan
           </Button>
         </div>
       </div>
@@ -174,16 +213,16 @@ const Portfolio = () => {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-lg font-medium">Exposition Totale</CardTitle>
+            <CardTitle className="text-lg font-medium">Total Exposure</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">
               {formatCurrency(portfolioMetrics.totalExposure)}
             </div>
             <div className="flex items-center gap-1 mt-1 text-sm">
-              <span>Tirée: {((portfolioMetrics.totalDrawn / portfolioMetrics.totalExposure) * 100).toFixed(1)}%</span>
+              <span>Drawn: {((portfolioMetrics.totalDrawn / portfolioMetrics.totalExposure) * 100).toFixed(1)}%</span>
               <span className="text-muted-foreground mx-1">|</span>
-              <span>Non-tirée: {((portfolioMetrics.totalUndrawn / portfolioMetrics.totalExposure) * 100).toFixed(1)}%</span>
+              <span>Undrawn: {((portfolioMetrics.totalUndrawn / portfolioMetrics.totalExposure) * 100).toFixed(1)}%</span>
             </div>
           </CardContent>
         </Card>
@@ -197,23 +236,23 @@ const Portfolio = () => {
               {formatCurrency(portfolioMetrics.totalExpectedLoss)}
             </div>
             <div className="flex items-center gap-1 mt-1 text-sm">
-              <span>PD moyenne: {(portfolioMetrics.weightedAveragePD * 100).toFixed(2)}%</span>
+              <span>Average PD: {(portfolioMetrics.weightedAveragePD * 100).toFixed(2)}%</span>
               <span className="text-muted-foreground mx-1">|</span>
-              <span>LGD moyenne: {(portfolioMetrics.weightedAverageLGD * 100).toFixed(0)}%</span>
+              <span>Average LGD: {(portfolioMetrics.weightedAverageLGD * 100).toFixed(0)}%</span>
             </div>
           </CardContent>
         </Card>
         
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-lg font-medium">RWA Total</CardTitle>
+            <CardTitle className="text-lg font-medium">Total RWA</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">
               {formatCurrency(portfolioMetrics.totalRWA)}
             </div>
             <div className="flex items-center gap-1 mt-1 text-sm">
-              <span>Densité RWA: {((portfolioMetrics.totalRWA / portfolioMetrics.totalExposure) * 100).toFixed(0)}%</span>
+              <span>RWA Density: {((portfolioMetrics.totalRWA / portfolioMetrics.totalExposure) * 100).toFixed(0)}%</span>
             </div>
           </CardContent>
         </Card>
@@ -221,7 +260,7 @@ const Portfolio = () => {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-lg font-medium">
-              EVA Portefeuille
+              Portfolio EVA
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -239,17 +278,17 @@ const Portfolio = () => {
       
       <Tabs defaultValue="overview">
         <TabsList>
-          <TabsTrigger value="overview">Vue d'Ensemble</TabsTrigger>
-          <TabsTrigger value="loans-list">Liste des Prêts</TabsTrigger>
-          <TabsTrigger value="risk-analysis">Analyse de Risque</TabsTrigger>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="loans-list">Loans List</TabsTrigger>
+          <TabsTrigger value="risk-analysis">Risk Analysis</TabsTrigger>
         </TabsList>
         
         <TabsContent value="overview" className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
               <CardHeader>
-                <CardTitle>Analyse de la Valeur Économique Ajoutée (EVA)</CardTitle>
-                <CardDescription>Top 10 des prêts par EVA</CardDescription>
+                <CardTitle>Economic Value Added (EVA) Analysis</CardTitle>
+                <CardDescription>Top 10 loans by EVA</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="h-80">
@@ -265,7 +304,7 @@ const Portfolio = () => {
                         ]} 
                       />
                       <Legend />
-                      <Bar dataKey="evaIntrinsic" fill="#00C48C" name="EVA Intrinsèque" />
+                      <Bar dataKey="evaIntrinsic" fill="#00C48C" name="Intrinsic EVA" />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -273,7 +312,7 @@ const Portfolio = () => {
               <CardFooter className="flex justify-end">
                 <Button variant="outline" size="sm" asChild>
                   <Link to="/analytics/eva">
-                    Voir Analyse EVA Complète
+                    View Full EVA Analysis
                   </Link>
                 </Button>
               </CardFooter>
@@ -281,8 +320,8 @@ const Portfolio = () => {
             
             <Card>
               <CardHeader>
-                <CardTitle>Répartition Sectorielle de l'EVA</CardTitle>
-                <CardDescription>Contribution à l'EVA par secteur d'activité</CardDescription>
+                <CardTitle>Sectoral EVA Distribution</CardTitle>
+                <CardDescription>EVA contribution by business sector</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="h-80">
@@ -313,8 +352,8 @@ const Portfolio = () => {
             
             <Card className="lg:col-span-2">
               <CardHeader>
-                <CardTitle>Analyse ROE vs Risque</CardTitle>
-                <CardDescription>Relation entre rentabilité (ROE) et risque (EL/Encours)</CardDescription>
+                <CardTitle>ROE vs Risk Analysis</CardTitle>
+                <CardDescription>Relationship between profitability (ROE) and risk (EL/Outstanding)</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="h-80">
@@ -326,7 +365,7 @@ const Portfolio = () => {
                       <XAxis 
                         type="number" 
                         dataKey="x" 
-                        name="Risque (EL/Encours)" 
+                        name="Risk (EL/Outstanding)" 
                         unit="%" 
                         domain={[0, 'dataMax']}
                       />
@@ -341,7 +380,7 @@ const Portfolio = () => {
                         type="number" 
                         dataKey="z" 
                         range={[60, 400]} 
-                        name="Encours" 
+                        name="Outstanding" 
                         unit="M€" 
                       />
                       <Tooltip 
@@ -370,205 +409,179 @@ const Portfolio = () => {
                   </ResponsiveContainer>
                 </div>
               </CardContent>
-              <CardFooter className="flex justify-end">
-                <Button variant="outline" size="sm" asChild>
-                  <Link to="/analytics/risk">
-                    Voir Analyse de Risque Complète
-                  </Link>
-                </Button>
-              </CardFooter>
             </Card>
           </div>
         </TabsContent>
         
-        <TabsContent value="loans-list">
+        <TabsContent value="loans-list" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Liste des Prêts</CardTitle>
-              <CardDescription>Vue détaillée de tous les prêts du portefeuille</CardDescription>
+              <CardTitle>Portfolio Loans</CardTitle>
+              <CardDescription>
+                Detailed list of all loans in the portfolio with their key metrics
+              </CardDescription>
             </CardHeader>
             <CardContent>
+              {loans.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-muted-foreground mb-4">No loans in the portfolio</p>
+                  <Button onClick={handleNewLoan}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add First Loan
+                  </Button>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Nom</TableHead>
+                        <TableHead>Loan Name</TableHead>
                     <TableHead>Client</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Secteur</TableHead>
-                    <TableHead className="text-right">Montant Original</TableHead>
-                    <TableHead className="text-right">Encours</TableHead>
-                    <TableHead className="text-right">EVA Intrinsèque</TableHead>
+                        <TableHead>Sector</TableHead>
+                        <TableHead className="text-right">Outstanding</TableHead>
+                        <TableHead className="text-right">PD</TableHead>
+                        <TableHead className="text-right">LGD</TableHead>
+                        <TableHead className="text-right">Expected Loss</TableHead>
                     <TableHead className="text-right">ROE</TableHead>
-                    <TableHead className="text-right">Risque (EL)</TableHead>
+                        <TableHead className="text-right">EVA</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {loans.map(loan => (
+                      {loans.map((loan) => (
                     <TableRow key={loan.id}>
                       <TableCell className="font-medium">
-                        <Link to={`/loans/${loan.id}`} className="text-primary hover:underline">
+                            <Link to={`/loans/${loan.id}`} className="hover:underline">
                           {loan.name}
                         </Link>
                       </TableCell>
                       <TableCell>{loan.clientName}</TableCell>
                       <TableCell>
-                        <Badge variant="outline">{loan.type}</Badge>
-                      </TableCell>
-                      <TableCell>{loan.sector}</TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(loan.originalAmount, loan.currency)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(loan.outstandingAmount, loan.currency)}
+                            <Badge variant="outline">{loan.sector}</Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatCurrency(loan.outstandingAmount)}
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex items-center justify-end">
-                          {loan.metrics?.evaIntrinsic || 0 >= 0 ? (
-                            <TrendingUp className="h-4 w-4 mr-1 text-green-500" />
-                          ) : (
-                            <TrendingDown className="h-4 w-4 mr-1 text-red-500" />
-                          )}
-                          {formatCurrency(loan.metrics?.evaIntrinsic || 0, loan.currency)}
-                        </div>
+                            {(loan.pd * 100).toFixed(2)}%
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className={`font-medium ${(loan.metrics?.roe || 0) >= 0.12 ? 'text-green-600' : (loan.metrics?.roe || 0) >= 0.08 ? 'text-amber-600' : 'text-red-600'}`}>
+                            {(loan.lgd * 100).toFixed(0)}%
+                      </TableCell>
+                      <TableCell className="text-right">
+                            {formatCurrency(loan.metrics?.expectedLoss || 0)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                            <span className={`font-medium ${
+                              (loan.metrics?.roe || 0) > defaultCalculationParameters.targetROE 
+                                ? 'text-green-600' 
+                                : 'text-red-600'
+                            }`}>
                           {((loan.metrics?.roe || 0) * 100).toFixed(2)}%
-                        </div>
+                            </span>
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex items-center justify-end">
-                          {(loan.metrics?.expectedLoss || 0) / loan.outstandingAmount > 0.02 && (
-                            <AlertTriangle className="h-4 w-4 mr-1 text-amber-500" />
-                          )}
-                          {formatCurrency(loan.metrics?.expectedLoss || 0, loan.currency)}
-                        </div>
+                            <span className={`font-medium ${
+                              (loan.metrics?.evaIntrinsic || 0) > 0 
+                                ? 'text-green-600' 
+                                : 'text-red-600'
+                            }`}>
+                              {formatCurrency(loan.metrics?.evaIntrinsic || 0)}
+                            </span>
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
+                </div>
+              )}
             </CardContent>
-            <CardFooter className="flex justify-between">
-              <div className="text-sm text-muted-foreground">
-                Affichage de {loans.length} prêts
-              </div>
-              <Button variant="outline" size="sm" onClick={handleExport}>
-                <Download className="h-4 w-4 mr-2" />
-                Exporter la Liste
-              </Button>
-            </CardFooter>
           </Card>
         </TabsContent>
         
-        <TabsContent value="risk-analysis">
+        <TabsContent value="risk-analysis" className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Risk Concentration</CardTitle>
+                <CardDescription>Risk distribution by exposure size and rating</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Top 5 Exposures</span>
+                    <span className="text-sm text-muted-foreground">
+                      {((loans.slice(0, 5).reduce((sum, loan) => sum + loan.outstandingAmount, 0) / portfolioMetrics.totalExposure) * 100).toFixed(1)}% of portfolio
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {loans
+                      .sort((a, b) => b.outstandingAmount - a.outstandingAmount)
+                      .slice(0, 5)
+                      .map((loan, index) => (
+                        <div key={loan.id} className="flex items-center justify-between p-2 bg-muted rounded">
+                          <div>
+                            <p className="font-medium">{loan.name}</p>
+                            <p className="text-sm text-muted-foreground">{loan.clientName}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-medium">{formatCurrency(loan.outstandingAmount)}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {((loan.outstandingAmount / portfolioMetrics.totalExposure) * 100).toFixed(1)}%
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            
           <Card>
             <CardHeader>
-              <CardTitle>Analyse de Risque du Portefeuille</CardTitle>
-              <CardDescription>Exposition et métriques de risque par secteur et notation</CardDescription>
+                <CardTitle>Risk Metrics Summary</CardTitle>
+                <CardDescription>Key portfolio risk indicators</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              <h3 className="font-medium text-lg">Exposition par Secteur</h3>
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={loans.reduce((acc, loan) => {
-                      const existingItem = acc.find(item => item.name === loan.sector);
-                      if (existingItem) {
-                        existingItem.exposure += loan.outstandingAmount;
-                        existingItem.el += loan.metrics?.expectedLoss || 0;
-                      } else {
-                        acc.push({
-                          name: loan.sector,
-                          exposure: loan.outstandingAmount,
-                          el: loan.metrics?.expectedLoss || 0
-                        });
-                      }
-                      return acc;
-                    }, [] as { name: string; exposure: number; el: number }[]).sort((a, b) => b.exposure - a.exposure)}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis yAxisId="left" orientation="left" />
-                    <YAxis yAxisId="right" orientation="right" />
-                    <Tooltip 
-                      formatter={(value: number, name: string) => [
-                        formatCurrency(value),
-                        name === 'exposure' ? 'Exposition' : 'Expected Loss'
-                      ]} 
-                    />
-                    <Legend />
-                    <Bar yAxisId="left" dataKey="exposure" fill="#2D5BFF" name="Exposition" />
-                    <Bar yAxisId="right" dataKey="el" fill="#FF3B5B" name="Expected Loss" />
-                  </BarChart>
-                </ResponsiveContainer>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="text-center p-4 bg-muted rounded">
+                      <p className="text-2xl font-bold">{(portfolioMetrics.weightedAveragePD * 100).toFixed(2)}%</p>
+                      <p className="text-sm text-muted-foreground">Weighted Avg PD</p>
+                    </div>
+                    <div className="text-center p-4 bg-muted rounded">
+                      <p className="text-2xl font-bold">{(portfolioMetrics.weightedAverageLGD * 100).toFixed(0)}%</p>
+                      <p className="text-sm text-muted-foreground">Weighted Avg LGD</p>
+                    </div>
               </div>
               
-              <h3 className="font-medium text-lg mt-8">Métriques de Risque par Notation</h3>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Notation</TableHead>
-                    <TableHead className="text-right">Nombre de Prêts</TableHead>
-                    <TableHead className="text-right">Exposition</TableHead>
-                    <TableHead className="text-right">PD Moyenne</TableHead>
-                    <TableHead className="text-right">LGD Moyenne</TableHead>
-                    <TableHead className="text-right">Expected Loss</TableHead>
-                    <TableHead className="text-right">Densité RWA</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loans.reduce((acc, loan) => {
-                    const existingItem = acc.find(item => item.rating === loan.internalRating);
-                    if (existingItem) {
-                      existingItem.count += 1;
-                      existingItem.exposure += loan.outstandingAmount;
-                      existingItem.pdWeighted += loan.pd * loan.outstandingAmount;
-                      existingItem.lgdWeighted += loan.lgd * loan.outstandingAmount;
-                      existingItem.el += loan.metrics?.expectedLoss || 0;
-                      existingItem.rwa += loan.metrics?.rwa || 0;
-                    } else {
-                      acc.push({
-                        rating: loan.internalRating,
-                        count: 1,
-                        exposure: loan.outstandingAmount,
-                        pdWeighted: loan.pd * loan.outstandingAmount,
-                        lgdWeighted: loan.lgd * loan.outstandingAmount,
-                        el: loan.metrics?.expectedLoss || 0,
-                        rwa: loan.metrics?.rwa || 0
-                      });
-                    }
-                    return acc;
-                  }, [] as { 
-                    rating: string; 
-                    count: number; 
-                    exposure: number; 
-                    pdWeighted: number; 
-                    lgdWeighted: number; 
-                    el: number; 
-                    rwa: number 
-                  }[]).map(item => (
-                    <TableRow key={item.rating}>
-                      <TableCell className="font-medium">{item.rating}</TableCell>
-                      <TableCell className="text-right">{item.count}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(item.exposure)}</TableCell>
-                      <TableCell className="text-right">{((item.pdWeighted / item.exposure) * 100).toFixed(2)}%</TableCell>
-                      <TableCell className="text-right">{((item.lgdWeighted / item.exposure) * 100).toFixed(0)}%</TableCell>
-                      <TableCell className="text-right">{formatCurrency(item.el)}</TableCell>
-                      <TableCell className="text-right">{((item.rwa / item.exposure) * 100).toFixed(0)}%</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span>Expected Loss Rate</span>
+                      <span className="font-medium">
+                        {((portfolioMetrics.totalExpectedLoss / portfolioMetrics.totalExposure) * 100).toFixed(2)}%
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>RWA Density</span>
+                      <span className="font-medium">
+                        {((portfolioMetrics.totalRWA / portfolioMetrics.totalExposure) * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Number of Loans</span>
+                      <span className="font-medium">{loans.length}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Average Loan Size</span>
+                      <span className="font-medium">
+                        {loans.length > 0 ? formatCurrency(portfolioMetrics.totalExposure / loans.length) : '€0'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
             </CardContent>
-            <CardFooter className="flex justify-end">
-              <Button variant="outline" size="sm" asChild>
-                <Link to="/analytics/risk">
-                  Analyse de Risque Avancée
-                </Link>
-              </Button>
-            </CardFooter>
           </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>

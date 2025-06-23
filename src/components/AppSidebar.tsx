@@ -45,27 +45,27 @@ export function AppSidebar() {
       
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Général</SidebarGroupLabel>
+          <SidebarGroupLabel>General</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton onClick={() => navigate('/')} isActive={isActive('/')}>
                   <Home />
-                  <span>Tableau de bord</span>
+                  <span>Dashboard</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               
               <SidebarMenuItem>
                 <SidebarMenuButton onClick={() => navigate('/portfolio')} isActive={isActive('/portfolio')}>
                   <Briefcase />
-                  <span>Portefeuille</span>
+                  <span>Portfolio</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               
               <SidebarMenuItem>
                 <SidebarMenuButton onClick={() => navigate('/loans')} isActive={isActive('/loans')}>
                   <CreditCard />
-                  <span>Prêts</span>
+                  <span>Loans</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -73,7 +73,7 @@ export function AppSidebar() {
         </SidebarGroup>
         
         <SidebarGroup>
-          <SidebarGroupLabel>Analyse</SidebarGroupLabel>
+          <SidebarGroupLabel>Analytics</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
@@ -86,7 +86,7 @@ export function AppSidebar() {
               <SidebarMenuItem>
                 <SidebarMenuButton onClick={() => navigate('/analytics/risk')} isActive={isActive('/analytics/risk')}>
                   <PieChartIcon />
-                  <span>Risque</span>
+                  <span>Risk</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               
@@ -108,7 +108,7 @@ export function AppSidebar() {
         </SidebarGroup>
         
         <SidebarGroup>
-          <SidebarGroupLabel>Outils</SidebarGroupLabel>
+          <SidebarGroupLabel>Tools</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
@@ -121,14 +121,14 @@ export function AppSidebar() {
               <SidebarMenuItem>
                 <SidebarMenuButton onClick={() => navigate('/parameters')} isActive={isActive('/parameters')}>
                   <Settings />
-                  <span>Paramètres</span>
+                  <span>Parameters</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               
               <SidebarMenuItem>
                 <SidebarMenuButton onClick={() => navigate('/reports')} isActive={isActive('/reports')}>
                   <FileSpreadsheet />
-                  <span>Rapports</span>
+                  <span>Reports</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>

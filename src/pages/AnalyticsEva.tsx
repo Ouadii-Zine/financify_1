@@ -28,7 +28,7 @@ const AnalyticsEva = () => {
     defaultCalculationParameters
   ));
   
-  // Top 5 des prêts par EVA
+  // Top 5 loans by EVA
   const topLoansByEva = [...samplePortfolio.loans]
     .sort((a, b) => b.metrics.evaIntrinsic - a.metrics.evaIntrinsic)
     .slice(0, 5)
@@ -38,7 +38,7 @@ const AnalyticsEva = () => {
       roe: loan.metrics.roe * 100
     }));
   
-  // Données pour EVA vs PnL par trimestre (données simulées)
+  // Data for EVA vs PnL by quarter (simulated data)
   const evaVsPnlData = [
     { name: 'Q1 2023', eva: 1200000, pnl: 1450000 },
     { name: 'Q2 2023', eva: 1350000, pnl: 1550000 },
@@ -47,7 +47,7 @@ const AnalyticsEva = () => {
     { name: 'Q1 2024', eva: 1650000, pnl: 1800000 },
   ];
   
-  // Répartition de l'EVA par secteur
+  // EVA distribution by sector
   const evaBySector = samplePortfolio.loans.reduce((acc, loan) => {
     const existingSector = acc.find(item => item.name === loan.sector);
     if (existingSector) {
@@ -65,7 +65,7 @@ const AnalyticsEva = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-lg">EVA Totale</CardTitle>
+            <CardTitle className="text-lg">Total EVA</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">
@@ -80,7 +80,7 @@ const AnalyticsEva = () => {
         
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-lg">EVA Moyenne par Prêt</CardTitle>
+            <CardTitle className="text-lg">Average EVA per Loan</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">
@@ -95,7 +95,7 @@ const AnalyticsEva = () => {
         
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-lg">Écart EVA/ROE Cible</CardTitle>
+            <CardTitle className="text-lg">EVA/Target ROE Gap</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">
@@ -107,15 +107,15 @@ const AnalyticsEva = () => {
       
       <Tabs defaultValue="top-loans">
         <TabsList>
-          <TabsTrigger value="top-loans">Top 5 Prêts</TabsTrigger>
-          <TabsTrigger value="eva-evolution">Évolution EVA</TabsTrigger>
-          <TabsTrigger value="sector-distribution">Distribution Sectorielle</TabsTrigger>
+          <TabsTrigger value="top-loans">Top 5 Loans</TabsTrigger>
+          <TabsTrigger value="eva-evolution">EVA Evolution</TabsTrigger>
+          <TabsTrigger value="sector-distribution">Sector Distribution</TabsTrigger>
         </TabsList>
         
         <TabsContent value="top-loans">
           <Card>
             <CardHeader>
-              <CardTitle>Top 5 Prêts par EVA</CardTitle>
+              <CardTitle>Top 5 Loans by EVA</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-80">
@@ -144,7 +144,7 @@ const AnalyticsEva = () => {
         <TabsContent value="eva-evolution">
           <Card>
             <CardHeader>
-              <CardTitle>Évolution EVA vs P&L</CardTitle>
+              <CardTitle>EVA vs P&L Evolution</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-80">
@@ -173,7 +173,7 @@ const AnalyticsEva = () => {
         <TabsContent value="sector-distribution">
           <Card>
             <CardHeader>
-              <CardTitle>Répartition de l'EVA par Secteur</CardTitle>
+              <CardTitle>EVA Distribution by Sector</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-80">

@@ -19,8 +19,10 @@ import { defaultCalculationParameters } from '../data/sampleData';
 import { Loan } from '../types/finance';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
+import { useNavigate } from 'react-router-dom';
 
 const Import = () => {
+  const navigate = useNavigate();
   const [fileSelected, setFileSelected] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [previewData, setPreviewData] = useState<Partial<Loan>[]>([]);
@@ -46,32 +48,38 @@ const Import = () => {
         complete: (results) => {
           try {
             const loans = results.data.map((row: any, index) => {
+              // Identifier les clés correctes avec différentes variations possibles
+              const originalAmount = parseFloat(String(row.amount || row.montant || row.Montant || row['Montant original'] || '0'));
+              
               return {
-                id: row.id || `imported-${index}`,
-                name: row.name || row.nom || '',
-                clientName: row.clientName || row.client || '',
-                type: row.type || 'term',
-                status: row.status || 'active',
-                originalAmount: parseFloat(row.amount || row.montant || '0'),
-                pd: parseFloat(row.pd || '0') / 100,
-                lgd: parseFloat(row.lgd || '0') / 100,
-                sector: row.sector || row.secteur || 'Général',
-                country: row.country || row.pays || 'France',
-                startDate: row.startDate || row.dateDebut || new Date().toISOString().split('T')[0],
-                endDate: row.endDate || row.dateFin || new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
-                currency: row.currency || row.devise || 'EUR',
-                margin: parseFloat(row.margin || row.marge || '0'),
-                referenceRate: parseFloat(row.referenceRate || row.tauxReference || '0'),
-                outstandingAmount: parseFloat(row.outstandingAmount || '0'),
-                drawnAmount: parseFloat(row.drawnAmount || '0'),
-                undrawnAmount: parseFloat(row.undrawnAmount || '0'),
-                ead: parseFloat(row.ead || '0'),
-                internalRating: row.internalRating || row.ratingInterne || 'BB',
+                id: row.id || row.ID || `imported-${index}`,
+                name: row.name || row.nom || row.Nom || '',
+                clientName: row.clientName || row.client || row.Client || '',
+                type: row.type || row.Type || 'term',
+                status: row.status || row.Statut || 'active',
+                originalAmount: originalAmount,
+                // Si PD est fourni en pourcentage (ex: 1%), le convertir en décimal (0.01)
+                pd: parseFloat(String(row.pd || row.PD || '0')) / (parseFloat(String(row.pd || row.PD || '0')) > 1 ? 100 : 1),
+                // Si LGD est fourni en pourcentage (ex: 45%), le convertir en décimal (0.45)
+                lgd: parseFloat(String(row.lgd || row.LGD || '0')) / (parseFloat(String(row.lgd || row.LGD || '0')) > 1 ? 100 : 1),
+                sector: row.sector || row.secteur || row.Secteur || 'Général',
+                country: row.country || row.pays || row.Pays || 'France',
+                startDate: row.startDate || row.dateDebut || row['Date de début'] || new Date().toISOString().split('T')[0],
+                endDate: row.endDate || row.dateFin || row['Date de fin'] || new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
+                currency: row.currency || row.devise || row.Devise || 'EUR',
+                // Pour les valeurs numériques, convertir de pourcentage à décimal si nécessaire
+                margin: parseFloat(String(row.margin || row.marge || row.Marge || '0')) / (parseFloat(String(row.margin || row.marge || row.Marge || '0')) > 1 ? 100 : 1),
+                referenceRate: parseFloat(String(row.referenceRate || row.tauxReference || row['Taux de référence'] || '0')) / (parseFloat(String(row.referenceRate || row.tauxReference || row['Taux de référence'] || '0')) > 1 ? 100 : 1),
+                outstandingAmount: parseFloat(String(row.outstandingAmount || row.Encours || originalAmount || '0')),
+                drawnAmount: parseFloat(String(row.drawnAmount || row['Montant tiré'] || originalAmount || '0')),
+                undrawnAmount: parseFloat(String(row.undrawnAmount || row['Montant non tiré'] || '0')),
+                ead: parseFloat(String(row.ead || row.EAD || row.drawnAmount || row['Montant tiré'] || originalAmount || '0')),
+                internalRating: row.internalRating || row.ratingInterne || row['Notation interne'] || 'BB',
                 fees: {
-                  upfront: parseFloat(row.upfrontFee || '0'),
-                  commitment: parseFloat(row.commitmentFee || '0'),
-                  agency: parseFloat(row.agencyFee || '0'),
-                  other: parseFloat(row.otherFee || '0')
+                  upfront: parseFloat(String(row.upfrontFee || row['Frais upfront'] || '0')),
+                  commitment: parseFloat(String(row.commitmentFee || row['Frais commitment'] || '0')),
+                  agency: parseFloat(String(row.agencyFee || row['Frais agency'] || '0')),
+                  other: parseFloat(String(row.otherFee || row['Autres frais'] || '0'))
                 },
                 cashFlows: [],
                 metrics: {
@@ -90,11 +98,11 @@ const Import = () => {
             });
             resolve(loans);
           } catch (error) {
-            reject(new Error(`Erreur de parsing CSV: ${error}`));
+            reject(new Error(`CSV parsing error: ${error}`));
           }
         },
         error: (error) => {
-          reject(new Error(`Erreur de parsing CSV: ${error.message}`));
+          reject(new Error(`CSV parsing error: ${error.message}`));
         }
       });
     });
@@ -112,32 +120,38 @@ const Import = () => {
           const jsonData = XLSX.utils.sheet_to_json(worksheet);
           
           const loans = jsonData.map((row: any, index) => {
+            // Identifier les clés correctes avec différentes variations possibles
+            const originalAmount = parseFloat(String(row.amount || row.montant || row.Montant || row['Montant original'] || '0'));
+            
             return {
               id: row.id || row.ID || `imported-${index}`,
               name: row.name || row.nom || row.Nom || '',
               clientName: row.clientName || row.client || row.Client || '',
               type: row.type || row.Type || 'term',
               status: row.status || row.Statut || 'active',
-              originalAmount: parseFloat(String(row.amount || row.montant || row.Montant || '0')),
-              pd: parseFloat(String(row.pd || row.PD || '0')) / 100,
-              lgd: parseFloat(String(row.lgd || row.LGD || '0')) / 100,
+              originalAmount: originalAmount,
+              // Si PD est fourni en pourcentage (ex: 1%), le convertir en décimal (0.01)
+              pd: parseFloat(String(row.pd || row.PD || '0')) / (parseFloat(String(row.pd || row.PD || '0')) > 1 ? 100 : 1),
+              // Si LGD est fourni en pourcentage (ex: 45%), le convertir en décimal (0.45)
+              lgd: parseFloat(String(row.lgd || row.LGD || '0')) / (parseFloat(String(row.lgd || row.LGD || '0')) > 1 ? 100 : 1),
               sector: row.sector || row.secteur || row.Secteur || 'Général',
               country: row.country || row.pays || row.Pays || 'France',
-              startDate: row.startDate || row.dateDebut || new Date().toISOString().split('T')[0],
-              endDate: row.endDate || row.dateFin || new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
+              startDate: row.startDate || row.dateDebut || row['Date de début'] || new Date().toISOString().split('T')[0],
+              endDate: row.endDate || row.dateFin || row['Date de fin'] || new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
               currency: row.currency || row.devise || row.Devise || 'EUR',
-              margin: parseFloat(String(row.margin || row.marge || row.Marge || '0')),
-              referenceRate: parseFloat(String(row.referenceRate || row.tauxReference || '0')),
-              outstandingAmount: parseFloat(String(row.outstandingAmount || '0')),
-              drawnAmount: parseFloat(String(row.drawnAmount || '0')),
-              undrawnAmount: parseFloat(String(row.undrawnAmount || '0')),
-              ead: parseFloat(String(row.ead || '0')),
-              internalRating: row.internalRating || row.ratingInterne || 'BB',
+              // Pour les valeurs numériques, convertir de pourcentage à décimal si nécessaire
+              margin: parseFloat(String(row.margin || row.marge || row.Marge || '0')) / (parseFloat(String(row.margin || row.marge || row.Marge || '0')) > 1 ? 100 : 1),
+              referenceRate: parseFloat(String(row.referenceRate || row.tauxReference || row['Taux de référence'] || '0')) / (parseFloat(String(row.referenceRate || row.tauxReference || row['Taux de référence'] || '0')) > 1 ? 100 : 1),
+              outstandingAmount: parseFloat(String(row.outstandingAmount || row.Encours || originalAmount || '0')),
+              drawnAmount: parseFloat(String(row.drawnAmount || row['Montant tiré'] || originalAmount || '0')),
+              undrawnAmount: parseFloat(String(row.undrawnAmount || row['Montant non tiré'] || '0')),
+              ead: parseFloat(String(row.ead || row.EAD || row.drawnAmount || row['Montant tiré'] || originalAmount || '0')),
+              internalRating: row.internalRating || row.ratingInterne || row['Notation interne'] || 'BB',
               fees: {
-                upfront: parseFloat(String(row.upfrontFee || '0')),
-                commitment: parseFloat(String(row.commitmentFee || '0')),
-                agency: parseFloat(String(row.agencyFee || '0')),
-                other: parseFloat(String(row.otherFee || '0'))
+                upfront: parseFloat(String(row.upfrontFee || row['Frais upfront'] || '0')),
+                commitment: parseFloat(String(row.commitmentFee || row['Frais commitment'] || '0')),
+                agency: parseFloat(String(row.agencyFee || row['Frais agency'] || '0')),
+                other: parseFloat(String(row.otherFee || row['Autres frais'] || '0'))
               },
               cashFlows: [],
               metrics: {
@@ -156,10 +170,10 @@ const Import = () => {
           });
           resolve(loans);
         } catch (error) {
-          reject(new Error(`Erreur de parsing Excel: ${error}`));
+          reject(new Error(`Excel parsing error: ${error}`));
         }
       };
-      reader.onerror = () => reject(new Error("Erreur de lecture du fichier"));
+      reader.onerror = () => reject(new Error("File reading error"));
       reader.readAsBinaryString(file);
     });
   };
@@ -266,83 +280,103 @@ const Import = () => {
   };
   
   const handleUpload = () => {
-    if (!fileSelected || previewData.length === 0) return;
-    
     setIsUploading(true);
     
-    setTimeout(() => {
-      try {
-        const loansToAdd = previewData.map(partialLoan => {
-          if (!partialLoan.name || !partialLoan.clientName || !partialLoan.originalAmount) {
-            throw new Error("Données de prêt incomplètes");
-          }
-          
-          const loan: Loan = {
-            id: partialLoan.id || `loan-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-            name: partialLoan.name,
-            clientName: partialLoan.clientName,
-            type: partialLoan.type || 'term',
-            status: partialLoan.status || 'active',
-            startDate: partialLoan.startDate || new Date().toISOString().split('T')[0],
-            endDate: partialLoan.endDate || new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
-            currency: partialLoan.currency || 'EUR',
-            originalAmount: partialLoan.originalAmount,
-            outstandingAmount: partialLoan.outstandingAmount || partialLoan.originalAmount,
-            drawnAmount: partialLoan.drawnAmount || partialLoan.originalAmount,
-            undrawnAmount: partialLoan.undrawnAmount || 0,
-            pd: partialLoan.pd || 0.01,
-            lgd: partialLoan.lgd || 0.45,
-            ead: partialLoan.ead || partialLoan.originalAmount,
-            fees: partialLoan.fees || {
-              upfront: 0,
-              commitment: 0,
-              agency: 0,
-              other: 0
-            },
-            margin: partialLoan.margin || 2,
-            referenceRate: partialLoan.referenceRate || 3,
-            internalRating: partialLoan.internalRating || 'BB',
-            sector: partialLoan.sector || 'Général',
-            country: partialLoan.country || 'France',
-            cashFlows: partialLoan.cashFlows || [],
-            metrics: partialLoan.metrics || {
-              evaIntrinsic: 0,
-              evaSale: 0,
-              expectedLoss: 0,
-              rwa: 0,
-              roe: 0,
-              raroc: 0,
-              costOfRisk: 0,
-              capitalConsumption: 0,
-              netMargin: 0,
-              effectiveYield: 0
-            }
-          };
-          
-          return loan;
-        });
-        
-        loanDataService.addLoans(loansToAdd, defaultCalculationParameters);
-        
-        setImportSuccess(true);
-        setImportErrors([]);
-        toast({
-          title: "Import réussi",
-          description: `${loansToAdd.length} prêts ont été importés avec succès.`,
-          variant: "default"
-        });
-      } catch (error: any) {
-        setImportSuccess(false);
-        setImportErrors([`Erreur lors de l'importation: ${error.message}`]);
-        toast({
-          title: "Erreur d'importation",
-          description: error.message,
-          variant: "destructive"
-        });
-      } finally {
-        setIsUploading(false);
+    try {
+      if (!previewData || previewData.length === 0) {
+        throw new Error("No data to import");
       }
-    }, 800);
+      
+      // Format loan data correctly
+      const formattedLoans = previewData.map(loanData => {
+        // Generate unique ID if not specified
+        const loanId = loanData.id || `loan-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+        
+        // Ensure original amount is defined
+        const originalAmount = typeof loanData.originalAmount === 'number' ? loanData.originalAmount : 0;
+        if (originalAmount <= 0) {
+          throw new Error(`Loan ${loanData.name} has an invalid original amount.`);
+        }
+        
+        // Ensure default values for required fields
+        return {
+          id: loanId,
+          name: loanData.name || "Unnamed Loan",
+          clientName: loanData.clientName || "Unknown Client",
+          type: loanData.type || "term",
+          status: loanData.status || "active",
+          startDate: loanData.startDate || new Date().toISOString().split('T')[0],
+          endDate: loanData.endDate || new Date(new Date().setFullYear(new Date().getFullYear() + 5)).toISOString().split('T')[0],
+          currency: loanData.currency || "EUR",
+          originalAmount: originalAmount,
+          outstandingAmount: typeof loanData.outstandingAmount === 'number' ? loanData.outstandingAmount : originalAmount,
+          drawnAmount: typeof loanData.drawnAmount === 'number' ? loanData.drawnAmount : originalAmount,
+          undrawnAmount: typeof loanData.undrawnAmount === 'number' ? loanData.undrawnAmount : 0,
+          pd: typeof loanData.pd === 'number' ? loanData.pd : 0.01,
+          lgd: typeof loanData.lgd === 'number' ? loanData.lgd : 0.45,
+          ead: typeof loanData.ead === 'number' ? loanData.ead : (typeof loanData.drawnAmount === 'number' ? loanData.drawnAmount : originalAmount),
+          fees: {
+            upfront: typeof loanData.fees?.upfront === 'number' ? loanData.fees.upfront : 0,
+            commitment: typeof loanData.fees?.commitment === 'number' ? loanData.fees.commitment : 0,
+            agency: typeof loanData.fees?.agency === 'number' ? loanData.fees.agency : 0,
+            other: typeof loanData.fees?.other === 'number' ? loanData.fees.other : 0
+          },
+          margin: typeof loanData.margin === 'number' ? loanData.margin : 0.02,
+          referenceRate: typeof loanData.referenceRate === 'number' ? loanData.referenceRate : 0.03,
+          internalRating: loanData.internalRating || "BB",
+          sector: loanData.sector || "General",
+          country: loanData.country || "France",
+          cashFlows: loanData.cashFlows || [],
+          metrics: {
+            evaIntrinsic: 0,
+            evaSale: 0,
+            expectedLoss: 0,
+            rwa: 0,
+            roe: 0,
+            raroc: 0,
+            costOfRisk: 0,
+            capitalConsumption: 0,
+            netMargin: 0,
+            effectiveYield: 0
+          }
+        };
+      });
+      
+      console.log('Formatted data before import:', formattedLoans);
+      
+      // Import formatted loans into service
+      loanDataService.addLoans(formattedLoans as Loan[], defaultCalculationParameters);
+      
+      // User feedback
+      setImportSuccess(true);
+      toast({
+        title: "Import successful",
+        description: `${formattedLoans.length} loans have been imported successfully.`,
+        variant: "default"
+      });
+      
+      // Reset form
+      setFileSelected(null);
+      setPreviewData([]);
+      
+      // Force update of tables in other pages
+      // This will be done automatically when user navigates to another page
+      
+      setTimeout(() => {
+        navigate('/loans');
+      }, 500);
+      
+    } catch (error: any) {
+      console.error("Error importing data:", error);
+      setImportErrors([`Import error: ${error.message}`]);
+      toast({
+        title: "Import error",
+        description: error.message,
+        variant: "destructive"
+      });
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleDownloadTemplate = (templateType: string) => {
@@ -350,13 +384,13 @@ const Import = () => {
     
     if (result.success) {
       toast({
-        title: "Téléchargement initié",
+        title: "Download started",
         description: result.message,
         variant: "default"
       });
     } else {
       toast({
-        title: "Erreur de téléchargement",
+        title: "Download error",
         description: result.message,
         variant: "destructive"
       });
@@ -365,21 +399,21 @@ const Import = () => {
   
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Import de Données</h1>
+      <h1 className="text-2xl font-bold">Data Import</h1>
       
       <Tabs defaultValue="upload">
         <TabsList>
-          <TabsTrigger value="upload">Import de Fichier</TabsTrigger>
-          <TabsTrigger value="template">Gabarits</TabsTrigger>
-          <TabsTrigger value="history">Historique</TabsTrigger>
+          <TabsTrigger value="upload">File Import</TabsTrigger>
+          <TabsTrigger value="template">Templates</TabsTrigger>
+          <TabsTrigger value="history">History</TabsTrigger>
         </TabsList>
         
         <TabsContent value="upload">
           <Card>
             <CardHeader>
-              <CardTitle>Importer des Prêts</CardTitle>
+              <CardTitle>Import Loans</CardTitle>
               <CardDescription>
-                Glissez-déposez un fichier CSV ou Excel contenant les données de prêts.
+                Drag and drop a CSV or Excel file containing loan data.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -411,10 +445,10 @@ const Import = () => {
                   ) : (
                     <>
                       <p className="text-sm font-medium">
-                        Cliquez pour sélectionner un fichier ou glissez-le ici
+                        Click to select a file or drag it here
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        Formats supportés: CSV, Excel (.xlsx, .xls)
+                        Supported formats: CSV, Excel (.xlsx, .xls)
                       </p>
                     </>
                   )}
@@ -423,16 +457,16 @@ const Import = () => {
               
               {fileSelected && previewData.length > 0 && (
                 <div className="mt-6">
-                  <h3 className="text-lg font-medium mb-2">Aperçu des données</h3>
+                  <h3 className="text-lg font-medium mb-2">Data Preview</h3>
                   <div className="border rounded-lg overflow-hidden">
                     <Table>
                       <TableHeader>
                         <TableRow>
                           <TableHead>ID</TableHead>
-                          <TableHead>Nom</TableHead>
+                          <TableHead>Name</TableHead>
                           <TableHead>Client</TableHead>
                           <TableHead>Type</TableHead>
-                          <TableHead className="text-right">Montant</TableHead>
+                          <TableHead className="text-right">Amount</TableHead>
                           <TableHead className="text-right">PD</TableHead>
                           <TableHead className="text-right">LGD</TableHead>
                         </TableRow>
@@ -462,7 +496,7 @@ const Import = () => {
                   {importSuccess && (
                     <div className="flex items-center gap-2 mt-4 p-3 bg-green-50 text-green-800 rounded-md">
                       <CheckCircle2 className="h-5 w-5" />
-                      <p className="text-sm">Import réussi! {previewData.length} prêts ont été importés.</p>
+                      <p className="text-sm">Import successful! {previewData.length} loans have been imported.</p>
                     </div>
                   )}
                   
@@ -470,7 +504,7 @@ const Import = () => {
                     <div className="flex items-center gap-2 mt-4 p-3 bg-red-50 text-red-800 rounded-md">
                       <AlertTriangle className="h-5 w-5" />
                       <div>
-                        <p className="text-sm font-medium">Erreurs d'importation:</p>
+                        <p className="text-sm font-medium">Import errors:</p>
                         <ul className="text-xs list-disc list-inside mt-1">
                           {importErrors.map((error, idx) => (
                             <li key={idx}>{error}</li>
@@ -488,7 +522,7 @@ const Import = () => {
                         setPreviewData([]);
                       }}
                     >
-                      Annuler
+                      Cancel
                     </Button>
                     <Button 
                       onClick={handleUpload}
@@ -497,10 +531,10 @@ const Import = () => {
                       {isUploading ? (
                         <>
                           <span className="loading loading-spinner loading-xs mr-2"></span>
-                          Importation...
+                          Importing...
                         </>
                       ) : (
-                        'Importer les données'
+                        'Import data'
                       )}
                     </Button>
                   </div>
@@ -513,9 +547,9 @@ const Import = () => {
         <TabsContent value="template">
           <Card>
             <CardHeader>
-              <CardTitle>Télécharger des Gabarits</CardTitle>
+              <CardTitle>Download Templates</CardTitle>
               <CardDescription>
-                Utilisez ces gabarits pour préparer vos données avant l'importation.
+                Use these templates to prepare your data before importing.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -524,13 +558,13 @@ const Import = () => {
                   <div className="flex items-start gap-3">
                     <FileText className="h-8 w-8 text-blue-500 shrink-0" />
                     <div>
-                      <h3 className="font-medium">Gabarit Excel pour Prêts</h3>
+                      <h3 className="font-medium">Excel Template for Loans</h3>
                       <p className="text-sm text-muted-foreground mb-2">
-                        Modèle pour importer des prêts avec tous les champs requis.
+                        Template to import loans with all required fields.
                       </p>
                       <Button size="sm" variant="outline" onClick={() => handleDownloadTemplate('prets')}>
                         <Download className="h-4 w-4 mr-2" />
-                        Télécharger
+                        Download
                       </Button>
                     </div>
                   </div>
@@ -539,7 +573,7 @@ const Import = () => {
                       <AccordionTrigger className="text-sm">
                         <span className="flex items-center">
                           <Info className="h-4 w-4 mr-2" />
-                          Format requis
+                          Required format
                         </span>
                       </AccordionTrigger>
                       <AccordionContent>
@@ -553,13 +587,13 @@ const Import = () => {
                   <div className="flex items-start gap-3">
                     <FileText className="h-8 w-8 text-green-500 shrink-0" />
                     <div>
-                      <h3 className="font-medium">Gabarit CSV pour Cash Flows</h3>
+                      <h3 className="font-medium">CSV Template for Cash Flows</h3>
                       <p className="text-sm text-muted-foreground mb-2">
-                        Format pour importer des cash flows prévisionnels.
+                        Format to import forecasted cash flows.
                       </p>
                       <Button size="sm" variant="outline" onClick={() => handleDownloadTemplate('cashflows')}>
                         <Download className="h-4 w-4 mr-2" />
-                        Télécharger
+                        Download
                       </Button>
                     </div>
                   </div>
@@ -568,7 +602,7 @@ const Import = () => {
                       <AccordionTrigger className="text-sm">
                         <span className="flex items-center">
                           <Info className="h-4 w-4 mr-2" />
-                          Format requis
+                          Required format
                         </span>
                       </AccordionTrigger>
                       <AccordionContent>
@@ -582,13 +616,13 @@ const Import = () => {
                   <div className="flex items-start gap-3">
                     <FileText className="h-8 w-8 text-purple-500 shrink-0" />
                     <div>
-                      <h3 className="font-medium">Gabarit pour Paramètres</h3>
+                      <h3 className="font-medium">Parameters Template</h3>
                       <p className="text-sm text-muted-foreground mb-2">
-                        Format pour les paramètres de calcul personnalisés.
+                        Format for custom calculation parameters.
                       </p>
                       <Button size="sm" variant="outline" onClick={() => handleDownloadTemplate('parametres')}>
                         <Download className="h-4 w-4 mr-2" />
-                        Télécharger
+                        Download
                       </Button>
                     </div>
                   </div>
@@ -597,7 +631,7 @@ const Import = () => {
                       <AccordionTrigger className="text-sm">
                         <span className="flex items-center">
                           <Info className="h-4 w-4 mr-2" />
-                          Format requis
+                          Required format
                         </span>
                       </AccordionTrigger>
                       <AccordionContent>
@@ -613,21 +647,21 @@ const Import = () => {
                     <div>
                       <h3 className="font-medium">Documentation</h3>
                       <p className="text-sm text-muted-foreground mb-2">
-                        Guide complet pour l'importation des données.
+                        Complete guide for data import.
                       </p>
                       <Button size="sm" variant="outline" onClick={() => handleDownloadTemplate('documentation')}>
                         <Download className="h-4 w-4 mr-2" />
-                        Télécharger
+                        Download
                       </Button>
                     </div>
                   </div>
                   <div className="mt-2 text-sm p-3 bg-muted rounded-md">
-                    <p>Ce document contient des instructions détaillées pour :</p>
+                    <p>This document contains detailed instructions for:</p>
                     <ul className="list-disc list-inside mt-2 pl-2">
-                      <li>Préparer vos données pour l'importation</li>
-                      <li>Comprendre les formats de fichiers acceptés</li>
-                      <li>Résoudre les problèmes d'importation courants</li>
-                      <li>Vérifier la validité des données avant import</li>
+                      <li>Preparing your data for import</li>
+                      <li>Understanding accepted file formats</li>
+                      <li>Solving common import issues</li>
+                      <li>Validating data before import</li>
                     </ul>
                   </div>
                 </Card>
@@ -639,9 +673,9 @@ const Import = () => {
         <TabsContent value="history">
           <Card>
             <CardHeader>
-              <CardTitle>Historique des Imports</CardTitle>
+              <CardTitle>Import History</CardTitle>
               <CardDescription>
-                Consultez les dernières opérations d'importation.
+                View recent import operations.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -649,40 +683,40 @@ const Import = () => {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Date</TableHead>
-                    <TableHead>Fichier</TableHead>
+                    <TableHead>File</TableHead>
                     <TableHead>Type</TableHead>
-                    <TableHead className="text-right">Éléments</TableHead>
-                    <TableHead>Statut</TableHead>
+                    <TableHead className="text-right">Items</TableHead>
+                    <TableHead>Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   <TableRow>
                     <TableCell>17/04/2025 09:30</TableCell>
                     <TableCell>portefeuille_q1_2025.xlsx</TableCell>
-                    <TableCell>Prêts</TableCell>
+                    <TableCell>Loans</TableCell>
                     <TableCell className="text-right">15</TableCell>
-                    <TableCell className="text-green-600">Succès</TableCell>
+                    <TableCell className="text-green-600">Success</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell>10/04/2025 14:15</TableCell>
                     <TableCell>cash_flows_prev.csv</TableCell>
                     <TableCell>Cash Flows</TableCell>
                     <TableCell className="text-right">42</TableCell>
-                    <TableCell className="text-green-600">Succès</TableCell>
+                    <TableCell className="text-green-600">Success</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell>05/04/2025 11:20</TableCell>
                     <TableCell>parametres_2025.xlsx</TableCell>
-                    <TableCell>Paramètres</TableCell>
+                    <TableCell>Parameters</TableCell>
                     <TableCell className="text-right">8</TableCell>
-                    <TableCell className="text-red-600">Échec</TableCell>
+                    <TableCell className="text-red-600">Failed</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell>01/04/2025 16:45</TableCell>
                     <TableCell>loans_march_2025.xlsx</TableCell>
-                    <TableCell>Prêts</TableCell>
+                    <TableCell>Loans</TableCell>
                     <TableCell className="text-right">12</TableCell>
-                    <TableCell className="text-green-600">Succès</TableCell>
+                    <TableCell className="text-green-600">Success</TableCell>
                   </TableRow>
                 </TableBody>
               </Table>

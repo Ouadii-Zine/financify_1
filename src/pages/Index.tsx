@@ -6,15 +6,15 @@ const Index = () => {
   const navigate = useNavigate();
   
   useEffect(() => {
-    // Rediriger automatiquement vers la page Dashboard
+    // Automatically redirect to Dashboard page
     navigate('/');
   }, [navigate]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
       <div className="text-center">
-        <h1 className="text-4xl font-bold mb-4">Chargement en cours...</h1>
-        <p className="text-xl text-gray-600">Redirection vers le tableau de bord</p>
+        <h1 className="text-4xl font-bold mb-4">Loading...</h1>
+        <p className="text-xl text-gray-600">Redirecting to dashboard</p>
       </div>
     </div>
   );

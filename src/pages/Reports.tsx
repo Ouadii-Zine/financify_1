@@ -65,25 +65,26 @@ const Reports = () => {
         (format === 'csv' && selectedReportConfig.csv);
       
       if (formatExists) {
-        if (format === 'excel' || format === 'pdf' || format === 'csv') {
+        if (format === 'excel' || format === 'csv') {
           ExcelTemplateService.exportData(
             portfolio, 
             reportType, 
-            format as 'excel' | 'pdf' | 'csv'
+            format as 'excel' | 'csv'
           );
         } else {
-          ExcelTemplateService.simulateDownload(reportType, format);
+          // PDF format - simulate download for now
+          console.log(`Generating ${reportType} report in ${format} format`);
         }
         
         toast({
-          title: "Rapport généré",
-          description: `Le rapport ${reportType} au format ${format.toUpperCase()} a été téléchargé.`,
+          title: "Report generated",
+          description: `The ${reportType} report in ${format.toUpperCase()} format has been downloaded.`,
           variant: "default"
         });
       } else {
         toast({
-          title: "Format non supporté",
-          description: `Le format ${format.toUpperCase()} n'est pas disponible pour ce rapport.`,
+          title: "Format not supported",
+          description: `The ${format.toUpperCase()} format is not available for this report.`,
           variant: "destructive"
         });
       }
@@ -92,19 +93,19 @@ const Reports = () => {
   
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Génération de Rapports</h1>
+      <h1 className="text-2xl font-bold">Report Generation</h1>
       
       <Card>
         <CardHeader>
-          <CardTitle>Options de Rapport</CardTitle>
+          <CardTitle>Report Options</CardTitle>
           <CardDescription>
-            Sélectionnez le type de rapport et le format souhaité.
+            Select the report type and desired format.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <h3 className="text-lg font-medium mb-2">Type de Rapport</h3>
+              <h3 className="text-lg font-medium mb-2">Report Type</h3>
               <div className="flex flex-col space-y-2">
                 <Button 
                   variant={selectedReport === 'Performance' ? 'default' : 'outline'}
@@ -113,23 +114,23 @@ const Reports = () => {
                   Performance
                 </Button>
                 <Button 
-                  variant={selectedReport === 'Risque' ? 'default' : 'outline'}
-                  onClick={() => setSelectedReport('Risque')}
+                  variant={selectedReport === 'Risk' ? 'default' : 'outline'}
+                  onClick={() => setSelectedReport('Risk')}
                 >
-                  Risque
+                  Risk
                 </Button>
                 <Button 
-                  variant={selectedReport === 'Réglementaire' ? 'default' : 'outline'}
-                  onClick={() => setSelectedReport('Réglementaire')}
+                  variant={selectedReport === 'Regulatory' ? 'default' : 'outline'}
+                  onClick={() => setSelectedReport('Regulatory')}
                 >
-                  Réglementaire
+                  Regulatory
                 </Button>
                 <Button 
-                  variant={selectedReport === 'Planifiés' ? 'default' : 'outline'}
-                  onClick={() => setSelectedReport('Planifiés')}
+                  variant={selectedReport === 'Scheduled' ? 'default' : 'outline'}
+                  onClick={() => setSelectedReport('Scheduled')}
                 >
                   <Clock className="h-4 w-4 mr-2" />
-                  Planifiés
+                  Scheduled
                 </Button>
               </div>
             </div>
