@@ -1,6 +1,7 @@
 import { Loan, CalculationParameters, Portfolio } from '../types/finance';
 import { calculateLoanMetrics, calculatePortfolioMetrics } from '../utils/financialCalculations';
 import { sampleLoans, defaultCalculationParameters } from '../data/sampleData';
+import DynamicColumnsService from './DynamicColumnsService';
 
 const LOCAL_STORAGE_KEY = 'financify-portfolio-loans';
 // Définir un événement personnalisé pour les mises à jour de prêts
@@ -79,24 +80,26 @@ class LoanDataService {
   // Obtenir uniquement les prêts ajoutés par l'utilisateur
   getLoans(): Loan[] {
     console.log('LoanDataService: Récupération des prêts utilisateur:', this.loans);
-    return this.loans;
+    // Ensure all loans have default values for dynamic columns
+    return this.loans.map(loan => this.ensureDynamicColumns(loan));
   }
   
   // Obtenir un prêt spécifique par ID
   getLoanById(id: string, includeSamples: boolean = true): Loan | undefined {
     // Chercher d'abord dans les prêts utilisateur
     const userLoan = this.loans.find(loan => loan.id === id);
-    if (userLoan) return userLoan;
+    if (userLoan) return this.ensureDynamicColumns(userLoan);
     
     // Si pas trouvé et includeSamples est true, chercher dans les échantillons
     if (includeSamples) {
       const sampleLoan = sampleLoans.find(loan => loan.id === id);
       if (sampleLoan) {
         // Recalculer les métriques pour le prêt d'échantillon
-        return {
+        const loanWithMetrics = {
           ...sampleLoan,
           metrics: calculateLoanMetrics(sampleLoan, this.calculationParams)
         };
+        return this.ensureDynamicColumns(loanWithMetrics);
       }
     }
     
@@ -195,6 +198,30 @@ class LoanDataService {
         localStorage.removeItem(LOCAL_STORAGE_KEY);
       }
     }
+  }
+
+  // Ensure loan has default values for all dynamic columns
+  private ensureDynamicColumns(loan: Loan): Loan {
+    const dynamicColumnsService = DynamicColumnsService.getInstance();
+    const dynamicColumns = dynamicColumnsService.getDynamicColumns();
+    
+    if (dynamicColumns.length === 0) {
+      return loan; // No dynamic columns defined yet
+    }
+    
+    const defaultValues = dynamicColumnsService.getDefaultValues();
+    const existingDetails = loan.additionalDetails || {};
+    
+    // Merge existing details with default values for missing columns
+    const mergedDetails: Record<string, any> = { ...defaultValues };
+    Object.keys(existingDetails).forEach(key => {
+      mergedDetails[key] = existingDetails[key];
+    });
+    
+    return {
+      ...loan,
+      additionalDetails: mergedDetails
+    };
   }
 
   // Effacer toutes les données utilisateur

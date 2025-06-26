@@ -32,6 +32,7 @@ export interface Loan {
   country: string;
   cashFlows: CashFlow[];
   metrics: LoanMetrics;
+  additionalDetails?: Record<string, any>; // Dynamic additional fields
 }
 
 export interface CashFlow {

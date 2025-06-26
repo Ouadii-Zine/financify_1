@@ -8,6 +8,7 @@ import { toast } from '@/hooks/use-toast';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Loan, LoanType, LoanStatus, Currency } from '@/types/finance';
 import LoanDataService from '@/services/LoanDataService';
+import DynamicColumnsService from '@/services/DynamicColumnsService';
 import { defaultCalculationParameters } from '@/data/sampleData';
 
 interface LoanFormData {
@@ -35,18 +36,21 @@ interface LoanFormData {
   commitmentFee?: string;
   agencyFee?: string;
   otherFee?: string;
+  additionalDetails?: Record<string, any>;
 }
 
 const LoanNew = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const loanDataService = LoanDataService.getInstance();
+  const dynamicColumnsService = DynamicColumnsService.getInstance();
   
   // Vérifier si nous sommes en mode édition (via le paramètre query)
   const searchParams = new URLSearchParams(location.search);
   const isEditMode = searchParams.get('edit') === 'true';
   const loanId = searchParams.get('id');
   const [pageTitle, setPageTitle] = useState('New Loan');
+  const [dynamicColumns, setDynamicColumns] = useState<any[]>([]);
   
   const defaultFormData: LoanFormData = {
     name: '',
@@ -71,36 +75,50 @@ const LoanNew = () => {
     upfrontFee: '0',
     commitmentFee: '0',
     agencyFee: '0',
-    otherFee: '0'
+    otherFee: '0',
+    additionalDetails: {}
   };
   
   const [formData, setFormData] = useState<LoanFormData>(defaultFormData);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  // Effet pour charger les données du prêt à modifier
+  // Load dynamic columns on component mount
+  useEffect(() => {
+    const columns = dynamicColumnsService.getDynamicColumns();
+    setDynamicColumns(columns);
+    
+    // Initialize additional details with default values
+    const defaultValues = dynamicColumnsService.getDefaultValues();
+    setFormData(prev => ({
+      ...prev,
+      additionalDetails: defaultValues
+    }));
+  }, []);
+  
+  // Effect to load loan data for editing
   useEffect(() => {
     if (isEditMode && loanId) {
       setPageTitle('Edit Loan');
       
       try {
-        // Essayer de récupérer les données depuis le localStorage ou directement depuis le service
+        // Try to retrieve data from localStorage or directly from service
         let loanToEdit: Loan | null = null;
         
-        // D'abord, essayer le localStorage (défini dans LoanDetail)
+        // First, try localStorage (set in LoanDetail)
         const storedLoan = localStorage.getItem('loan-to-edit');
         if (storedLoan) {
           loanToEdit = JSON.parse(storedLoan);
-          // Supprimer l'élément du localStorage une fois utilisé
+          // Remove from localStorage once used
           localStorage.removeItem('loan-to-edit');
         }
         
-        // Si pas dans le localStorage, rechercher dans le service
+        // If not in localStorage, search in service
         if (!loanToEdit) {
           loanToEdit = loanDataService.getLoanById(loanId);
         }
         
         if (loanToEdit) {
-          // Convertir les valeurs pour le formulaire (pourcentages, etc.)
+          // Convert values for form (percentages, etc.)
           setFormData({
             id: loanToEdit.id,
             name: loanToEdit.name,
@@ -125,7 +143,8 @@ const LoanNew = () => {
             upfrontFee: loanToEdit.fees.upfront.toString(),
             commitmentFee: loanToEdit.fees.commitment.toString(),
             agencyFee: loanToEdit.fees.agency.toString(),
-            otherFee: loanToEdit.fees.other.toString()
+            otherFee: loanToEdit.fees.other.toString(),
+            additionalDetails: loanToEdit.additionalDetails || {}
           });
         } else {
           toast({
@@ -133,17 +152,17 @@ const LoanNew = () => {
             description: "The loan to edit cannot be found.",
             variant: "destructive"
           });
-          // Rediriger vers la liste des prêts
+          // Redirect to loans list
           navigate('/loans');
         }
       } catch (error) {
-        console.error("Erreur lors du chargement des données du prêt:", error);
+        console.error("Error loading loan data:", error);
         toast({
           title: "Error",
           description: "Unable to load loan data for editing.",
           variant: "destructive"
         });
-        // Rediriger vers la liste des prêts
+        // Redirect to loans list
         navigate('/loans');
       }
     }
@@ -158,15 +177,25 @@ const LoanNew = () => {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  const handleDynamicFieldChange = (columnKey: string, value: any) => {
+    setFormData(prev => ({
+      ...prev,
+      additionalDetails: {
+        ...prev.additionalDetails,
+        [columnKey]: value
+      }
+    }));
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     
     try {
-      // Générer un ID unique si non fourni (pour les nouveaux prêts)
+      // Generate unique ID if not provided (for new loans)
       const loanId = formData.id || `loan-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       
-      // Préparer le prêt avec les données du formulaire
+      // Prepare loan with form data
       const preparedLoan: Loan = {
         id: loanId,
         name: formData.name,
@@ -194,6 +223,7 @@ const LoanNew = () => {
         internalRating: formData.internalRating,
         sector: formData.sector,
         country: formData.country,
+        additionalDetails: formData.additionalDetails,
         cashFlows: [], // Conserver les cash flows existants en cas d'édition
         metrics: {
           evaIntrinsic: 0,
@@ -210,7 +240,7 @@ const LoanNew = () => {
       };
       
       if (isEditMode && formData.id) {
-        // Mode édition : mettre à jour le prêt existant
+        // Edit mode: update existing loan
         const success = loanDataService.updateLoan(formData.id, preparedLoan, defaultCalculationParameters);
         
         if (success) {
@@ -220,33 +250,85 @@ const LoanNew = () => {
             variant: "default"
           });
         } else {
-          throw new Error("Échec de la mise à jour du prêt.");
+          throw new Error("Failed to update loan.");
         }
       } else {
-        // Mode création : ajouter un nouveau prêt
+        // Creation mode: add new loan
         loanDataService.addLoan(preparedLoan, defaultCalculationParameters);
         
         toast({
-          title: "Prêt créé",
-          description: `Le prêt "${preparedLoan.name}" a été créé avec succès.`,
+          title: "Loan created",
+          description: `The loan "${preparedLoan.name}" has been successfully created.`,
           variant: "default"
         });
       }
       
-      // Redirection vers la liste des prêts avec un petit délai pour s'assurer que l'événement est traité
+      // Redirect to loans list with a short delay to ensure event is processed
       setTimeout(() => {
         navigate('/loans');
       }, 500);
       
     } catch (error) {
-      console.error("Erreur lors de l'opération sur le prêt:", error);
+      console.error("Error during loan operation:", error);
       toast({
-        title: "Erreur",
-        description: `Une erreur est survenue: ${error}`,
+        title: "Error",
+        description: `An error occurred: ${error}`,
         variant: "destructive"
       });
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const renderDynamicField = (column: any) => {
+    const value = formData.additionalDetails?.[column.key] || '';
+    
+    switch (column.type) {
+      case 'number':
+        return (
+          <Input
+            type="number"
+            step="any"
+            value={value}
+            onChange={(e) => handleDynamicFieldChange(column.key, parseFloat(e.target.value) || 0)}
+            placeholder={`Enter ${column.label}`}
+          />
+        );
+      
+      case 'date':
+        return (
+          <Input
+            type="date"
+            value={value}
+            onChange={(e) => handleDynamicFieldChange(column.key, e.target.value)}
+          />
+        );
+      
+      case 'boolean':
+        return (
+          <Select
+            value={value.toString()}
+            onValueChange={(val) => handleDynamicFieldChange(column.key, val === 'true')}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="true">Yes</SelectItem>
+              <SelectItem value="false">No</SelectItem>
+            </SelectContent>
+          </Select>
+        );
+      
+      default: // text
+        return (
+          <Input
+            type="text"
+            value={value}
+            onChange={(e) => handleDynamicFieldChange(column.key, e.target.value)}
+            placeholder={`Enter ${column.label}`}
+          />
+        );
     }
   };
 
@@ -325,7 +407,7 @@ const LoanNew = () => {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="startDate">Date de Début</Label>
+                <Label htmlFor="startDate">Start Date</Label>
                 <Input 
                   id="startDate" 
                   name="startDate" 
@@ -336,7 +418,7 @@ const LoanNew = () => {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="endDate">Date de Fin</Label>
+                <Label htmlFor="endDate">End Date</Label>
                 <Input 
                   id="endDate" 
                   name="endDate" 
@@ -347,13 +429,13 @@ const LoanNew = () => {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="currency">Devise</Label>
+                <Label htmlFor="currency">Currency</Label>
                 <Select 
                   value={formData.currency} 
                   onValueChange={(value) => handleSelectChange('currency', value)}
                 >
                   <SelectTrigger id="currency">
-                    <SelectValue placeholder="Sélectionnez une devise" />
+                    <SelectValue placeholder="Select a currency" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="EUR">EUR</SelectItem>
@@ -366,7 +448,7 @@ const LoanNew = () => {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="originalAmount">Montant Original *</Label>
+                <Label htmlFor="originalAmount">Original Amount *</Label>
                 <Input 
                   id="originalAmount" 
                   name="originalAmount" 
@@ -383,15 +465,15 @@ const LoanNew = () => {
         
         <Card className="mt-6">
           <CardHeader>
-            <CardTitle>Risque et Rentabilité</CardTitle>
+            <CardTitle>Risk and Profitability</CardTitle>
             <CardDescription>
-              Informations concernant le risque et la rentabilité du prêt
+              Information about loan risk and profitability
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="pd">Probabilité de Défaut (%)</Label>
+                <Label htmlFor="pd">Probability of Default (%)</Label>
                 <Input 
                   id="pd" 
                   name="pd" 
@@ -417,7 +499,7 @@ const LoanNew = () => {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="internalRating">Notation Interne</Label>
+                <Label htmlFor="internalRating">Internal Rating</Label>
                 <Input 
                   id="internalRating" 
                   name="internalRating" 
@@ -428,7 +510,7 @@ const LoanNew = () => {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="margin">Marge (%)</Label>
+                <Label htmlFor="margin">Margin (%)</Label>
                 <Input 
                   id="margin" 
                   name="margin" 
@@ -441,7 +523,7 @@ const LoanNew = () => {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="referenceRate">Taux de Référence (%)</Label>
+                <Label htmlFor="referenceRate">Reference Rate (%)</Label>
                 <Input 
                   id="referenceRate" 
                   name="referenceRate" 
@@ -460,24 +542,24 @@ const LoanNew = () => {
           <CardHeader>
             <CardTitle>Classification</CardTitle>
             <CardDescription>
-              Informations de classification du prêt
+              Loan classification information
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="sector">Secteur</Label>
+                <Label htmlFor="sector">Sector</Label>
                 <Input 
                   id="sector" 
                   name="sector" 
                   value={formData.sector} 
                   onChange={handleInputChange} 
-                  placeholder="Technologie" 
+                  placeholder="Technology" 
                 />
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="country">Pays</Label>
+                <Label htmlFor="country">Country</Label>
                 <Input 
                   id="country" 
                   name="country" 
@@ -488,11 +570,40 @@ const LoanNew = () => {
               </div>
             </div>
           </CardContent>
+        </Card>
+
+        {/* Dynamic Columns Section */}
+        {dynamicColumns.length > 0 && (
+          <Card className="mt-6">
+            <CardHeader>
+              <CardTitle>Additional Details</CardTitle>
+              <CardDescription>
+                Additional fields detected from previous imports
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {dynamicColumns.map((column) => (
+                  <div key={column.key} className="space-y-2">
+                    <Label htmlFor={column.key}>
+                      {column.label}
+                    </Label>
+                    {renderDynamicField(column)}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        <Card className="mt-6">
           <CardFooter className="flex justify-between">
             <Button variant="outline" type="button" onClick={() => navigate('/loans')}>
-              Annuler
+              Cancel
             </Button>
-            <Button type="submit">Créer le Prêt</Button>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? 'Creating...' : isEditMode ? 'Update Loan' : 'Create Loan'}
+            </Button>
           </CardFooter>
         </Card>
       </form>

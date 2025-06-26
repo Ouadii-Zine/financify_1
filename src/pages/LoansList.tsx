@@ -199,12 +199,12 @@ const LoansList = () => {
     }).format(amount);
   };
   
-  // Fonction pour formater les pourcentages
+  // Function to format percentages
   const formatPercent = (value: number) => {
     return `${(value * 100).toFixed(2)}%`;
   };
   
-  // Fonction pour obtenir la couleur du badge selon le statut du prêt
+  // Function to get badge color based on loan status
   const getLoanStatusColor = (status: string) => {
     switch (status) {
       case 'active':
@@ -220,13 +220,13 @@ const LoansList = () => {
     }
   };
   
-  // Fonction pour exporter les données
+  // Function to export data
   const handleExport = () => {
     try {
       const portfolioData = {
         id: 'portfolio-1',
-        name: 'Portefeuille Exporté',
-        description: 'Exportation du portefeuille de prêts',
+        name: 'Exported Portfolio',
+        description: 'Loan portfolio export',
         loans: sortedLoans,
         metrics: {
           totalExposure: sortedLoans.reduce((sum, loan) => sum + loan.originalAmount, 0),
@@ -244,31 +244,31 @@ const LoansList = () => {
         }
       };
       
-      ExcelTemplateService.exportData(portfolioData, 'Liste_Complet_Prets', 'excel');
+      ExcelTemplateService.exportData(portfolioData, 'Complete_Loans_List', 'excel');
       
       toast({
-        title: "Export réussi",
-        description: "Les données ont été exportées avec succès au format Excel.",
+        title: "Export successful",
+        description: "Data has been successfully exported to Excel format.",
         variant: "default"
       });
     } catch (error) {
-      console.error("Erreur lors de l'export:", error);
+      console.error("Export error:", error);
       toast({
-        title: "Erreur d'export",
-        description: "Une erreur est survenue lors de l'export des données.",
+        title: "Export error",
+        description: "An error occurred while exporting data.",
         variant: "destructive"
       });
     }
   };
   
-  // Fonction pour gérer la suppression d'un prêt
+  // Function to handle loan deletion
   const handleDelete = (loanId: string) => {
-    // Ouvrir la boîte de dialogue de confirmation
+    // Open confirmation dialog
     setLoanToDelete(loanId);
     setDeleteDialogOpen(true);
   };
   
-  // Fonction pour confirmer la suppression
+  // Function to confirm deletion
   const confirmDelete = () => {
     if (loanToDelete) {
       try {
@@ -276,30 +276,30 @@ const LoansList = () => {
         
         if (success) {
           toast({
-            title: "Prêt supprimé",
-            description: "Le prêt a été supprimé avec succès.",
+            title: "Loan deleted",
+            description: "The loan has been successfully deleted.",
             variant: "default",
           });
           
-          // Recharger la liste des prêts
+          // Reload the loans list
           loadLoans();
         } else {
           toast({
-            title: "Erreur",
-            description: "Impossible de supprimer ce prêt.",
+            title: "Error",
+            description: "Unable to delete this loan.",
             variant: "destructive",
           });
         }
       } catch (error: any) {
         toast({
-          title: "Erreur",
-          description: `Une erreur est survenue: ${error.message}`,
+          title: "Error",
+          description: `An error occurred: ${error.message}`,
           variant: "destructive",
         });
       }
     }
     
-    // Fermer la boîte de dialogue et réinitialiser l'état
+    // Close dialog and reset state
     setDeleteDialogOpen(false);
     setLoanToDelete(null);
   };
@@ -319,7 +319,7 @@ const LoansList = () => {
           </Button>
           <Button onClick={() => navigate('/loans/new')}>
             <Plus className="h-4 w-4 mr-2" />
-            Nouveau Prêt
+            New Loan
           </Button>
         </div>
       </div>
@@ -435,7 +435,7 @@ const LoansList = () => {
                   <TableCell>
                     {loan.type === 'term' ? 'Term' : 
                      loan.type === 'revolver' ? 'Revolver' : 
-                     loan.type === 'bullet' ? 'Bullet' : 'Amortissable'}
+                     loan.type === 'bullet' ? 'Bullet' : 'Amortizing'}
                   </TableCell>
                   <TableCell>
                     <Badge className={`capitalize ${getLoanStatusColor(loan.status)}`}>
@@ -476,10 +476,10 @@ const LoansList = () => {
                               });
                             }
                           } catch (error) {
-                            console.error("Erreur de navigation:", error);
+                            console.error("Navigation error:", error);
                             toast({
-                              title: "Erreur",
-                              description: "Impossible d'afficher les détails du prêt.",
+                              title: "Error",
+                              description: "Unable to display loan details.",
                               variant: "destructive",
                             });
                           }
@@ -489,30 +489,30 @@ const LoansList = () => {
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => {
                           try {
-                            // Vérifier que le prêt existe avant de naviguer
+                            // Check if loan exists before navigating
                             const loanExists = loanDataService.getLoanById(loan.id);
                             if (loanExists) {
-                              // Pour l'instant, nous utilisons la page détail avec un paramètre d'édition
-                              // Comme il n'y a pas de route d'édition spécifique dans App.tsx
+                              // For now, we use the detail page with an edit parameter
+                              // As there's no specific edit route in App.tsx
                               navigate(`/loans/${loan.id}?edit=true`);
                             } else {
                               toast({
-                                title: "Erreur",
-                                description: "Ce prêt n'existe pas ou a été supprimé.",
+                                title: "Error",
+                                description: "This loan does not exist or has been deleted.",
                                 variant: "destructive",
                               });
                             }
                           } catch (error) {
-                            console.error("Erreur de navigation:", error);
+                            console.error("Navigation error:", error);
                             toast({
-                              title: "Erreur",
-                              description: "Impossible de modifier ce prêt.",
+                              title: "Error",
+                              description: "Unable to edit this loan.",
                               variant: "destructive",
                             });
                           }
                         }}>
                           <Edit className="h-4 w-4 mr-2" />
-                          Modifier
+                          Edit
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem 
@@ -520,7 +520,7 @@ const LoansList = () => {
                           onClick={() => handleDelete(loan.id)}
                         >
                           <Trash2 className="h-4 w-4 mr-2" />
-                          Supprimer
+                          Delete
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -532,7 +532,7 @@ const LoansList = () => {
         </Table>
       </div>
       
-      {/* Pagination et contrôles d'affichage */}
+      {/* Pagination and display controls */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Select
@@ -546,10 +546,10 @@ const LoansList = () => {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="5">5 par page</SelectItem>
-              <SelectItem value="10">10 par page</SelectItem>
-              <SelectItem value="20">20 par page</SelectItem>
-              <SelectItem value="50">50 par page</SelectItem>
+              <SelectItem value="5">5 per page</SelectItem>
+              <SelectItem value="10">10 per page</SelectItem>
+              <SelectItem value="20">20 per page</SelectItem>
+              <SelectItem value="50">50 per page</SelectItem>
             </SelectContent>
           </Select>
           
@@ -558,7 +558,7 @@ const LoansList = () => {
             size="sm"
             onClick={() => setShowAllItems(!showAllItems)}
           >
-            {showAllItems ? "Paginer" : "Voir tout"}
+            {showAllItems ? "Paginate" : "Show All"}
           </Button>
         </div>
         
@@ -582,7 +582,7 @@ const LoansList = () => {
             </Button>
             
             <span className="mx-2">
-              Page {currentPage} sur {totalPages}
+              Page {currentPage} of {totalPages}
             </span>
             
             <Button
@@ -605,23 +605,23 @@ const LoansList = () => {
         )}
         
         <div>
-          Affichage de {paginatedLoans.length} prêts sur {sortedLoans.length}
+          Showing {paginatedLoans.length} loans out of {sortedLoans.length}
         </div>
       </div>
       
-      {/* Boîte de dialogue de confirmation de suppression */}
+      {/* Delete confirmation dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Êtes-vous sûr de vouloir supprimer ce prêt?</AlertDialogTitle>
+            <AlertDialogTitle>Are you sure you want to delete this loan?</AlertDialogTitle>
             <AlertDialogDescription>
-              Cette action est irréversible. Toutes les données associées à ce prêt seront définitivement supprimées.
+              This action is irreversible. All data associated with this loan will be permanently deleted.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={confirmDelete} className="bg-red-600 hover:bg-red-700">
-              Supprimer
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

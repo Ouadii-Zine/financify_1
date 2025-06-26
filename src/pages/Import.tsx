@@ -15,6 +15,7 @@ import { toast } from '@/hooks/use-toast';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { downloadExcelTemplate, generateTemplateDocumentation } from '@/services/ExcelTemplateService';
 import LoanDataService from '../services/LoanDataService';
+import DynamicColumnsService, { DynamicColumn } from '../services/DynamicColumnsService';
 import { defaultCalculationParameters } from '../data/sampleData';
 import { Loan } from '../types/finance';
 import Papa from 'papaparse';
@@ -28,6 +29,8 @@ const Import = () => {
   const [previewData, setPreviewData] = useState<Partial<Loan>[]>([]);
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importSuccess, setImportSuccess] = useState(false);
+  const [detectedColumns, setDetectedColumns] = useState<DynamicColumn[]>([]);
+  const [rawImportData, setRawImportData] = useState<Record<string, any>[]>([]);
   const [templateDocs, setTemplateDocs] = useState<Record<string, string>>({
     prets: generateTemplateDocumentation('prets'),
     cashflows: generateTemplateDocumentation('cashflows'),
@@ -35,21 +38,35 @@ const Import = () => {
   });
   
   const loanDataService = LoanDataService.getInstance();
+  const dynamicColumnsService = DynamicColumnsService.getInstance();
 
   useEffect(() => {
     loanDataService.loadFromLocalStorage();
   }, []);
 
-  const parseCSV = (file: File): Promise<Partial<Loan>[]> => {
+  const parseCSV = (file: File): Promise<{ loans: Partial<Loan>[], rawData: Record<string, any>[] }> => {
     return new Promise((resolve, reject) => {
       Papa.parse(file, {
         header: true,
         skipEmptyLines: true,
         complete: (results) => {
           try {
+            // Store raw data for dynamic column detection
+            const rawData = results.data as Record<string, any>[];
+            
+            // Detect dynamic columns
+            const dynamicColumns = dynamicColumnsService.detectDynamicColumns(rawData);
+            setDetectedColumns(dynamicColumns);
+            
             const loans = results.data.map((row: any, index) => {
               // Identifier les clés correctes avec différentes variations possibles
               const originalAmount = parseFloat(String(row.amount || row.montant || row.Montant || row['Montant original'] || '0'));
+              
+              // Extract additional details (dynamic columns)
+              const additionalDetails: Record<string, any> = {};
+              dynamicColumns.forEach(col => {
+                additionalDetails[col.key] = row[col.key] || 'N/A';
+              });
               
               return {
                 id: row.id || row.ID || `imported-${index}`,
@@ -81,6 +98,7 @@ const Import = () => {
                   agency: parseFloat(String(row.agencyFee || row['Frais agency'] || '0')),
                   other: parseFloat(String(row.otherFee || row['Autres frais'] || '0'))
                 },
+                additionalDetails: Object.keys(additionalDetails).length > 0 ? additionalDetails : undefined,
                 cashFlows: [],
                 metrics: {
                   evaIntrinsic: 0,
@@ -96,7 +114,7 @@ const Import = () => {
                 }
               };
             });
-            resolve(loans);
+            resolve({ loans, rawData });
           } catch (error) {
             reject(new Error(`CSV parsing error: ${error}`));
           }
@@ -108,7 +126,7 @@ const Import = () => {
     });
   };
 
-  const parseExcel = async (file: File): Promise<Partial<Loan>[]> => {
+  const parseExcel = async (file: File): Promise<{ loans: Partial<Loan>[], rawData: Record<string, any>[] }> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -119,9 +137,22 @@ const Import = () => {
           const worksheet = workbook.Sheets[sheetName];
           const jsonData = XLSX.utils.sheet_to_json(worksheet);
           
+          // Store raw data for dynamic column detection
+          const rawData = jsonData as Record<string, any>[];
+          
+          // Detect dynamic columns
+          const dynamicColumns = dynamicColumnsService.detectDynamicColumns(rawData);
+          setDetectedColumns(dynamicColumns);
+          
           const loans = jsonData.map((row: any, index) => {
             // Identifier les clés correctes avec différentes variations possibles
             const originalAmount = parseFloat(String(row.amount || row.montant || row.Montant || row['Montant original'] || '0'));
+            
+            // Extract additional details (dynamic columns)
+            const additionalDetails: Record<string, any> = {};
+            dynamicColumns.forEach(col => {
+              additionalDetails[col.key] = row[col.key] || 'N/A';
+            });
             
             return {
               id: row.id || row.ID || `imported-${index}`,
@@ -153,6 +184,7 @@ const Import = () => {
                 agency: parseFloat(String(row.agencyFee || row['Frais agency'] || '0')),
                 other: parseFloat(String(row.otherFee || row['Autres frais'] || '0'))
               },
+              additionalDetails: Object.keys(additionalDetails).length > 0 ? additionalDetails : undefined,
               cashFlows: [],
               metrics: {
                 evaIntrinsic: 0,
@@ -168,7 +200,7 @@ const Import = () => {
               }
             };
           });
-          resolve(loans);
+          resolve({ loans, rawData });
         } catch (error) {
           reject(new Error(`Excel parsing error: ${error}`));
         }
@@ -187,16 +219,19 @@ const Import = () => {
       setImportErrors([]);
       
       try {
-        let parsedLoans: Partial<Loan>[] = [];
+        let parseResult: { loans: Partial<Loan>[], rawData: Record<string, any>[] };
         
         if (file.name.endsWith('.csv')) {
-          parsedLoans = await parseCSV(file);
+          parseResult = await parseCSV(file);
         } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-          parsedLoans = await parseExcel(file);
+          parseResult = await parseExcel(file);
         } else {
           setImportErrors(['Format de fichier non supporté. Veuillez utiliser CSV ou Excel.']);
           return;
         }
+        
+        const { loans: parsedLoans, rawData } = parseResult;
+        setRawImportData(rawData);
         
         if (parsedLoans.length === 0) {
           setImportErrors(['Aucune donnée trouvée dans le fichier.']);
@@ -242,16 +277,19 @@ const Import = () => {
       setImportErrors([]);
       
       try {
-        let parsedLoans: Partial<Loan>[] = [];
+        let parseResult: { loans: Partial<Loan>[], rawData: Record<string, any>[] };
         
         if (file.name.endsWith('.csv')) {
-          parsedLoans = await parseCSV(file);
+          parseResult = await parseCSV(file);
         } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-          parsedLoans = await parseExcel(file);
+          parseResult = await parseExcel(file);
         } else {
           setImportErrors(['Format de fichier non supporté. Veuillez utiliser CSV ou Excel.']);
           return;
         }
+        
+        const { loans: parsedLoans, rawData } = parseResult;
+        setRawImportData(rawData);
         
         if (parsedLoans.length === 0) {
           setImportErrors(['Aucune donnée trouvée dans le fichier.']);
@@ -285,6 +323,11 @@ const Import = () => {
     try {
       if (!previewData || previewData.length === 0) {
         throw new Error("No data to import");
+      }
+      
+      // Save detected dynamic columns to the service
+      if (detectedColumns.length > 0) {
+        dynamicColumnsService.addDynamicColumns(detectedColumns);
       }
       
       // Format loan data correctly
@@ -326,6 +369,7 @@ const Import = () => {
           internalRating: loanData.internalRating || "BB",
           sector: loanData.sector || "General",
           country: loanData.country || "France",
+          additionalDetails: loanData.additionalDetails || (detectedColumns.length > 0 ? dynamicColumnsService.getDefaultValues() : undefined),
           cashFlows: loanData.cashFlows || [],
           metrics: {
             evaIntrinsic: 0,
