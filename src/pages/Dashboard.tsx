@@ -305,10 +305,16 @@ const Dashboard = () => {
               <CardContent>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={evaVsPnlData}>
+                    <BarChart data={evaVsPnlData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="name" />
-                      <YAxis />
+                      <YAxis 
+                        domain={[0, 'dataMax']}
+                        tickFormatter={(value) => {
+                          if (value === 0) return '0M';
+                          return `${(value / 1000000).toFixed(1)}M`;
+                        }}
+                      />
                       <Tooltip formatter={(value: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(value)} />
                       <Legend />
                       <Bar dataKey="eva" fill="#2D5BFF" name="EVA" />
