@@ -48,6 +48,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { toast } from '@/hooks/use-toast';
 import ExcelTemplateService from '@/services/ExcelTemplateService';
 import LoanDataService, { LOANS_UPDATED_EVENT } from '@/services/LoanDataService';
+import MasterRefreshService from '@/services/MasterRefreshService';
+import PerformanceTimerService from '@/services/PerformanceTimerService';
 
 // Colors for charts
 const COLORS = ['#00C48C', '#2D5BFF', '#FFB800', '#FF3B5B', '#1A2C42', '#9B87F5', '#7E69AB'];
@@ -55,6 +57,9 @@ const COLORS = ['#00C48C', '#2D5BFF', '#FFB800', '#FF3B5B', '#1A2C42', '#9B87F5'
 const Portfolio = () => {
   const navigate = useNavigate();
   const loanDataService = LoanDataService.getInstance();
+  const masterRefreshService = MasterRefreshService.getInstance();
+  const performanceTimer = PerformanceTimerService.getInstance();
+  
   const [loans, setLoans] = useState<Loan[]>([]);
   const [portfolioMetrics, setPortfolioMetrics] = useState<PortfolioMetrics>({
     totalExposure: 0,
@@ -70,6 +75,10 @@ const Portfolio = () => {
     evaSumSale: 0,
     diversificationBenefit: 0
   });
+  
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshStatus, setRefreshStatus] = useState('Ready');
+  const [lastRefreshTime, setLastRefreshTime] = useState<Date | null>(null);
   
   useEffect(() => {
     // Load data from localStorage
@@ -160,6 +169,8 @@ const Portfolio = () => {
         id: 'financify-portfolio',
         name: 'Financify Portfolio',
         description: 'Complete portfolio including all loans',
+        createdDate: new Date().toISOString(),
+        lastModified: new Date().toISOString(),
         loans: loans,
         metrics: portfolioMetrics
       };
@@ -188,13 +199,132 @@ const Portfolio = () => {
     });
   };
 
+  // MasterRefresh handler - equivalent to "click on run first" button from PDF
+  const handleMasterRefresh = async () => {
+    if (isRefreshing) {
+      toast({
+        title: "Refresh in Progress",
+        description: "Portfolio refresh is already running. Please wait...",
+        variant: "default"
+      });
+      return;
+    }
+
+    setIsRefreshing(true);
+    setRefreshStatus('Starting...');
+    
+    try {
+      // Create portfolio array for the refresh service
+      const portfolios: PortfolioType[] = [{
+        id: 'main-portfolio',
+        name: 'Main Portfolio',
+        description: 'Primary loan portfolio',
+        createdDate: new Date().toISOString(),
+        lastModified: new Date().toISOString(),
+        loans: loans,
+        metrics: portfolioMetrics
+      }];
+
+      // Execute MasterRefresh sequence
+      const result = await masterRefreshService.refreshPortfolio(
+        portfolios,
+        defaultCalculationParameters,
+        {
+          importFacilities: false,
+          refreshMarketData: true,
+          syncDrawings: true,
+          generateDashboard: true,
+          updateReports: true,
+          validateData: true,
+          backupData: true
+        }
+      );
+
+      if (result.success) {
+        // Update UI with new metrics
+        if (result.metrics) {
+          setPortfolioMetrics(result.metrics);
+        }
+        
+        // Recalculate loan metrics
+        const updatedLoans = loans.map(loan => ({
+          ...loan,
+          metrics: calculateLoanMetrics(loan, defaultCalculationParameters)
+        }));
+        setLoans(updatedLoans);
+        
+        setLastRefreshTime(new Date());
+        setRefreshStatus('Completed');
+        
+        toast({
+          title: "Portfolio Refresh Complete",
+          description: `Portfolio successfully refreshed in ${Math.round(result.duration / 1000)} seconds`,
+          variant: "default"
+        });
+      } else {
+        setRefreshStatus('Error');
+        toast({
+          title: "Portfolio Refresh Failed",
+          description: result.message,
+          variant: "destructive"
+        });
+      }
+      
+    } catch (error) {
+      setRefreshStatus('Error');
+      console.error("MasterRefresh error:", error);
+      toast({
+        title: "Portfolio Refresh Error",
+        description: "An unexpected error occurred during portfolio refresh",
+        variant: "destructive"
+      });
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   // Rest of the code remains unchanged...
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Loan Portfolio</h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-2xl font-bold">Loan Portfolio</h1>
+          {lastRefreshTime && (
+            <div className="text-sm text-muted-foreground">
+              Last refresh: {lastRefreshTime.toLocaleString()}
+            </div>
+          )}
+          <div className="text-sm">
+            Status: <span className={`font-medium ${
+              refreshStatus === 'Completed' ? 'text-green-600' : 
+              refreshStatus === 'Error' ? 'text-red-600' : 
+              refreshStatus === 'Ready' ? 'text-blue-600' : 'text-yellow-600'
+            }`}>
+              {refreshStatus}
+            </span>
+          </div>
+        </div>
         
         <div className="flex items-center gap-2">
+          <Button 
+            variant="default" 
+            size="sm" 
+            onClick={handleMasterRefresh}
+            disabled={isRefreshing}
+            className="bg-green-600 hover:bg-green-700"
+          >
+            {isRefreshing ? (
+              <>
+                <div className="h-4 w-4 mr-2 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                Refreshing...
+              </>
+            ) : (
+              <>
+                <TrendingUp className="h-4 w-4 mr-2" />
+                Click on Run First
+              </>
+            )}
+          </Button>
           <Button variant="outline" size="sm" onClick={handleImport}>
             <Upload className="h-4 w-4 mr-2" />
             Import
@@ -203,7 +333,7 @@ const Portfolio = () => {
             <FileSpreadsheet className="h-4 w-4 mr-2" />
             Export
           </Button>
-          <Button variant="default" size="sm" onClick={handleNewLoan}>
+          <Button variant="outline" size="sm" onClick={handleNewLoan}>
             <Plus className="h-4 w-4 mr-2" />
             New Loan
           </Button>

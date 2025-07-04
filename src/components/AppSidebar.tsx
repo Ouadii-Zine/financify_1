@@ -77,6 +77,13 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
+                <SidebarMenuButton onClick={() => navigate('/portfolio')} isActive={isActive('/portfolio')}>
+                  <PieChart />
+                  <span>Portfolio Analysis</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              
+              <SidebarMenuItem>
                 <SidebarMenuButton onClick={() => navigate('/analytics/eva')} isActive={isActive('/analytics/eva')}>
                   <BarChart3 />
                   <span>EVA Analytics</span>
