@@ -56,9 +56,9 @@ export function AppSidebar() {
               </SidebarMenuItem>
               
               <SidebarMenuItem>
-                <SidebarMenuButton onClick={() => navigate('/portfolio')} isActive={isActive('/portfolio')}>
+                <SidebarMenuButton onClick={() => navigate('/portfolios')} isActive={isActive('/portfolios')}>
                   <Briefcase />
-                  <span>Portfolio</span>
+                  <span>Portfolios</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               

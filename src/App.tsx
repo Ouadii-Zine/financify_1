@@ -9,7 +9,7 @@ import Dashboard from "./pages/Dashboard";
 import LoansList from "./pages/LoansList";
 import LoanDetail from "./pages/LoanDetail";
 import NotFound from "./pages/NotFound";
-import Portfolio from "./pages/Portfolio";
+import Portfolios from "./pages/Portfolios";
 import AnalyticsEva from "./pages/AnalyticsEva";
 import AnalyticsRisk from "./pages/AnalyticsRisk";
 import AnalyticsPerformance from "./pages/AnalyticsPerformance";
@@ -30,7 +30,7 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Layout><Dashboard /></Layout>} />
-          <Route path="/portfolio" element={<Layout><Portfolio /></Layout>} />
+          <Route path="/portfolios" element={<Layout><Portfolios /></Layout>} />
           <Route path="/loans" element={<Layout><LoansList /></Layout>} />
           <Route path="/loans/new" element={<Layout><LoanNew /></Layout>} />
           <Route path="/loans/:id" element={<Layout><LoanDetail /></Layout>} />

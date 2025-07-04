@@ -45,7 +45,7 @@ import { sampleLoans, defaultCalculationParameters } from '../data/sampleData';
 import { Loan, CashFlow } from '../types/finance';
 import { calculateLoanMetrics } from '../utils/financialCalculations';
 import LoanDataService from '../services/LoanDataService';
-import DynamicColumnsService from '../services/DynamicColumnsService';
+import ClientTemplateService from '../services/ClientTemplateService';
 import { toast } from '@/hooks/use-toast';
 
 const LoanDetail = () => {
@@ -178,6 +178,56 @@ const LoanDetail = () => {
   const getValueColor = (value: number, threshold: number = 0) => {
     return value > threshold ? 'text-financial-green' : 'text-financial-red';
   };
+
+  // Function to get template fields
+  const getTemplateFields = () => {
+    if (!loan?.clientType) {
+      return {};
+    }
+
+    const templateService = ClientTemplateService.getInstance();
+    const clientConfig = templateService.getClientConfiguration(loan.clientType);
+    
+    if (!clientConfig) {
+      return {};
+    }
+
+    // Get all template field keys (required + optional, excluding calculated)
+    const templateFieldKeys = [...clientConfig.requiredFields, ...clientConfig.optionalFields];
+    const templateFields: Record<string, any> = {};
+
+    // Map loan data to template field names
+    const loanDataMapping: Record<string, any> = {
+      applicationCode: loan.id,
+      facilityId: loan.id,
+      dealId: loan.id,
+      dealName: loan.name,
+      longNameBorrower: loan.clientName,
+      currency: loan.currency,
+      facilityDate: loan.startDate,
+      maturity: loan.endDate,
+      internalRating: loan.internalRating,
+      loanMarginBps: loan.margin * 10000, // Convert to basis points
+      facilityFeeBps: loan.fees.commitment * 10000,
+      sector: loan.sector,
+      zoneGeographique: loan.country,
+      asofDate: new Date().toISOString().split('T')[0],
+      rafBorrower: loan.clientName,
+      ...loan.additionalDetails // Include any additional fields from import
+    };
+
+    // Get only template fields
+    for (const [key, value] of Object.entries(loanDataMapping)) {
+      if (value !== undefined && value !== null && value !== '' && templateFieldKeys.includes(key)) {
+        templateFields[key] = value;
+      }
+    }
+
+    return templateFields;
+  };
+
+  // Get template fields
+  const templateFields = getTemplateFields();
   
   // Prepare data for cash flows chart
   const cashFlowChartData = [...loan.cashFlows]
@@ -507,166 +557,70 @@ const LoanDetail = () => {
         <TabsContent value="details" className="space-y-6">
           <Card className="financial-card">
             <CardHeader>
-              <CardTitle>Loan Details</CardTitle>
+              <CardTitle>
+                Loan Details
+                {loan.clientType && (
+                  <span className="text-sm font-normal text-muted-foreground ml-2">
+                    ({loan.clientType} Template Fields)
+                  </span>
+                )}
+              </CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-lg font-semibold mb-3">General Information</h3>
-                  <div className="space-y-3">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">ID</span>
-                      <span className="font-medium">{loan.id}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Name</span>
-                      <span className="font-medium">{loan.name}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Client</span>
-                      <span className="font-medium">{loan.clientName}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Type</span>
-                      <span className="font-medium capitalize">{loan.type}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Status</span>
-                      <Badge className={`capitalize ${getLoanStatusColor(loan.status)}`}>
-                        {loan.status}
-                      </Badge>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Start Date</span>
-                      <span className="font-medium">{formatDate(loan.startDate)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">End Date</span>
-                      <span className="font-medium">{formatDate(loan.endDate)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Currency</span>
-                      <span className="font-medium">{loan.currency}</span>
-                    </div>
-                  </div>
-                </div>
-                
-                <div>
-                  <h3 className="text-lg font-semibold mb-3">Financial Parameters</h3>
-                  <div className="space-y-3">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Margin</span>
-                      <span className="font-medium">{formatPercent(loan.margin)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Reference Rate</span>
-                      <span className="font-medium">{formatPercent(loan.referenceRate)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Upfront Fees</span>
-                      <span className="font-medium">{formatCurrency(loan.fees.upfront)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Commitment Fee</span>
-                      <span className="font-medium">{formatPercent(loan.fees.commitment)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Agency Fees</span>
-                      <span className="font-medium">{formatCurrency(loan.fees.agency)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Other Fees</span>
-                      <span className="font-medium">{formatCurrency(loan.fees.other)}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-lg font-semibold mb-3">Exposure & Risk</h3>
-                  <div className="space-y-3">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Original Amount</span>
-                      <span className="font-medium">{formatCurrency(loan.originalAmount)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Outstanding</span>
-                      <span className="font-medium">{formatCurrency(loan.outstandingAmount)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Drawn Amount</span>
-                      <span className="font-medium">{formatCurrency(loan.drawnAmount)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Undrawn Amount</span>
-                      <span className="font-medium">{formatCurrency(loan.undrawnAmount)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">EAD</span>
-                      <span className="font-medium">{formatCurrency(loan.ead)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Probability of Default (PD)</span>
-                      <span className="font-medium">{formatPercent(loan.pd)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Loss Given Default (LGD)</span>
-                      <span className="font-medium">{formatPercent(loan.lgd)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Internal Rating</span>
-                      <span className="font-medium">{loan.internalRating}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Sector</span>
-                      <span className="font-medium">{loan.sector}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Country</span>
-                      <span className="font-medium">{loan.country}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          
-          {/* Additional Details Section */}
-          {loan.additionalDetails && Object.keys(loan.additionalDetails).length > 0 && (
-            <Card className="financial-card">
-              <CardHeader>
-                <CardTitle>Additional Details</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {Object.entries(loan.additionalDetails).map(([key, value]) => {
-                    // Get column info from DynamicColumnsService
-                    const dynamicColumnsService = DynamicColumnsService.getInstance();
-                    const columnInfo = dynamicColumnsService.getDynamicColumns().find(col => col.key === key);
-                    const displayLabel = columnInfo?.label || key.charAt(0).toUpperCase() + key.slice(1);
+            <CardContent>
+              {Object.keys(templateFields).length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {Object.entries(templateFields).map(([key, value]) => {
+                                         // Get template field info for better labeling
+                     const templateService = ClientTemplateService.getInstance();
+                     const clientConfig = templateService.getClientConfiguration(loan.clientType!);
+                     const fieldInfo = templateService.getColumnDefinition(key);
+                     const displayLabel = fieldInfo?.label || key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ');
                     
-                    // Format value based on type
+                    // Format value based on field type
                     let displayValue = value;
-                    if (columnInfo?.type === 'number' && typeof value === 'number') {
-                      displayValue = value.toLocaleString();
-                    } else if (columnInfo?.type === 'date' && value) {
-                      displayValue = new Date(value).toLocaleDateString('en-US');
+                    
+                    if (fieldInfo?.type === 'number' && typeof value === 'number') {
+                      if (key.includes('amount') || key.includes('limit') || key.includes('outstanding') || key.includes('fee')) {
+                        displayValue = formatCurrency(value);
+                      } else if (key.includes('rate') || key.includes('margin') || key.includes('pd') || key.includes('lgd')) {
+                        displayValue = formatPercent(value);
+                      } else {
+                        displayValue = value.toLocaleString();
+                      }
+                    } else if (fieldInfo?.type === 'date' && value) {
+                      displayValue = formatDate(value);
                     } else if (value === null || value === undefined || value === '') {
                       displayValue = 'N/A';
                     }
                     
                     return (
-                      <div key={key} className="space-y-1">
+                      <div key={key} className="space-y-2">
                         <span className="text-sm text-muted-foreground">{displayLabel}</span>
-                        <div className="font-medium">{displayValue}</div>
+                        <div className="font-medium break-words">
+                          {key === 'status' && value ? (
+                            <Badge className={`capitalize ${getLoanStatusColor(value)}`}>
+                              {value}
+                            </Badge>
+                          ) : (
+                            displayValue
+                          )}
+                        </div>
                       </div>
                     );
                   })}
                 </div>
-              </CardContent>
-            </Card>
-          )}
+              ) : (
+                <div className="text-center py-8">
+                  <p className="text-muted-foreground">
+                    No template fields available for this loan.
+                    {!loan.clientType && " Client type not specified."}
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+          
+
         </TabsContent>
         
         <TabsContent value="cashflows" className="space-y-6">

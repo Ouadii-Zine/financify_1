@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { 
   Table, 
   TableBody, 
@@ -25,6 +27,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { 
   Plus, 
@@ -40,7 +51,9 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
-  ChevronsRight
+  ChevronsRight,
+  Briefcase,
+  AlertTriangle
 } from 'lucide-react';
 import {
   AlertDialog,
@@ -52,60 +65,102 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { sampleLoans, defaultCalculationParameters } from '../data/sampleData';
-import { Loan } from '../types/finance';
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { defaultCalculationParameters } from '../data/sampleData';
+import { Loan, PortfolioSummary, ClientType } from '../types/finance';
 import { calculateLoanMetrics } from '../utils/financialCalculations';
 import LoanDataService from '../services/LoanDataService';
+import PortfolioService, { PORTFOLIOS_UPDATED_EVENT } from '../services/PortfolioService';
 import ExcelTemplateService from '../services/ExcelTemplateService';
 import { toast } from '@/hooks/use-toast';
 import { LOANS_UPDATED_EVENT } from '../services/LoanDataService';
 
 const LoansList = () => {
   const navigate = useNavigate();
+  const loanDataService = LoanDataService.getInstance();
+  const portfolioService = PortfolioService.getInstance();
+  
+  // Portfolio and loan state
+  const [portfolios, setPortfolios] = useState<PortfolioSummary[]>([]);
+  const [selectedPortfolioId, setSelectedPortfolioId] = useState<string>('');
   const [loans, setLoans] = useState<Loan[]>([]);
+  
+  // Filtering and search state
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [sortField, setSortField] = useState<string>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const loanDataService = LoanDataService.getInstance();
   
-  // Pagination
+  // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [showAllItems, setShowAllItems] = useState(false);
   
-  // State for deletion confirmation dialog
+  // Dialog states
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [loanToDelete, setLoanToDelete] = useState<string | null>(null);
+  const [addLoanDialogOpen, setAddLoanDialogOpen] = useState(false);
+  const [newLoanPortfolioId, setNewLoanPortfolioId] = useState<string>('');
 
   useEffect(() => {
-    loadLoans();
+    loadPortfolios();
 
-    // Add event listener for loan updates
-    const handleLoansUpdated = () => {
-      loadLoans();
+    // Listen for portfolio and loan updates
+    const handlePortfoliosUpdated = () => {
+      loadPortfolios();
     };
     
+    const handleLoansUpdated = () => {
+      if (selectedPortfolioId) {
+        loadLoansForPortfolio(selectedPortfolioId);
+      }
+    };
+    
+    window.addEventListener(PORTFOLIOS_UPDATED_EVENT, handlePortfoliosUpdated);
     window.addEventListener(LOANS_UPDATED_EVENT, handleLoansUpdated);
     
-    // Cleanup listener on component unmount
     return () => {
+      window.removeEventListener(PORTFOLIOS_UPDATED_EVENT, handlePortfoliosUpdated);
       window.removeEventListener(LOANS_UPDATED_EVENT, handleLoansUpdated);
     };
   }, []);
   
-  const loadLoans = () => {
-    loanDataService.loadFromLocalStorage();
-    // Get only user loans, without predefined examples
-    const userLoans = loanDataService.getLoans();
+  useEffect(() => {
+    if (selectedPortfolioId) {
+      loadLoansForPortfolio(selectedPortfolioId);
+    }
+  }, [selectedPortfolioId]);
+  
+  const loadPortfolios = () => {
+    const portfolioSummaries = portfolioService.getPortfolioSummaries();
+    setPortfolios(portfolioSummaries);
+    
+    // Auto-select the first portfolio if none selected
+    if (!selectedPortfolioId && portfolioSummaries.length > 0) {
+      const defaultPortfolio = portfolioSummaries.find(p => p.isDefault);
+      if (defaultPortfolio) {
+        setSelectedPortfolioId(defaultPortfolio.id);
+      } else {
+        setSelectedPortfolioId(portfolioSummaries[0].id);
+      }
+    }
+  };
+  
+  const loadLoansForPortfolio = (portfolioId: string) => {
+    const portfolioLoans = loanDataService.getLoans(portfolioId);
     
     // Recalculate metrics for these loans
-    const loansWithMetrics = userLoans.map(loan => ({
+    const loansWithMetrics = portfolioLoans.map(loan => ({
       ...loan,
       metrics: calculateLoanMetrics(loan, defaultCalculationParameters)
     }));
     
     setLoans(loansWithMetrics);
+    setCurrentPage(1); // Reset pagination when changing portfolio
+  };
+
+  const handlePortfolioChange = (portfolioId: string) => {
+    setSelectedPortfolioId(portfolioId);
   };
   
   // Filter loans according to search and filters
@@ -125,7 +180,6 @@ const LoansList = () => {
     let valueA: any;
     let valueB: any;
     
-    // Determine values to compare based on sort field
     switch (sortField) {
       case 'name':
         valueA = a.name;
@@ -156,7 +210,6 @@ const LoansList = () => {
         valueB = b.name;
     }
     
-    // Compare values based on sort direction
     if (typeof valueA === 'string') {
       return sortDirection === 'asc' 
         ? valueA.localeCompare(valueB) 
@@ -174,7 +227,7 @@ const LoansList = () => {
     ? sortedLoans 
     : sortedLoans.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
   
-  // Function to change sort
+  // Utility functions
   const handleSort = (field: string) => {
     if (field === sortField) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -184,13 +237,11 @@ const LoansList = () => {
     }
   };
   
-  // Style for sorted column header
   const getSortIndicator = (field: string) => {
     if (field !== sortField) return null;
     return sortDirection === 'asc' ? ' ↑' : ' ↓';
   };
   
-  // Function to format amounts in euros
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -199,94 +250,85 @@ const LoansList = () => {
     }).format(amount);
   };
   
-  // Function to format percentages
   const formatPercent = (value: number) => {
-    return `${(value * 100).toFixed(2)}%`;
+    return (value * 100).toFixed(2) + '%';
   };
   
-  // Function to get badge color based on loan status
   const getLoanStatusColor = (status: string) => {
     switch (status) {
       case 'active':
-        return 'bg-financial-green text-white';
+        return 'bg-green-100 text-green-800 hover:bg-green-200';
       case 'closed':
-        return 'bg-financial-gray text-white';
+        return 'bg-gray-100 text-gray-800 hover:bg-gray-200';
       case 'default':
-        return 'bg-financial-red text-white';
+        return 'bg-red-100 text-red-800 hover:bg-red-200';
       case 'restructured':
-        return 'bg-financial-yellow text-white';
+        return 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200';
       default:
-        return 'bg-financial-blue text-white';
+        return 'bg-gray-100 text-gray-800 hover:bg-gray-200';
     }
   };
   
-  // Function to export data
   const handleExport = () => {
-    try {
-      const portfolioData = {
-        id: 'portfolio-1',
-        name: 'Exported Portfolio',
-        description: 'Loan portfolio export',
-        loans: sortedLoans,
-        metrics: {
-          totalExposure: sortedLoans.reduce((sum, loan) => sum + loan.originalAmount, 0),
-          totalDrawn: sortedLoans.reduce((sum, loan) => sum + loan.drawnAmount, 0),
-          totalUndrawn: sortedLoans.reduce((sum, loan) => sum + loan.undrawnAmount, 0),
-          weightedAveragePD: 0,
-          weightedAverageLGD: 0,
-          totalExpectedLoss: sortedLoans.reduce((sum, loan) => sum + (loan.metrics?.expectedLoss || 0), 0),
-          totalRWA: sortedLoans.reduce((sum, loan) => sum + (loan.metrics?.rwa || 0), 0),
-          portfolioROE: 0,
-          portfolioRAROC: 0,
-          evaSumIntrinsic: sortedLoans.reduce((sum, loan) => sum + (loan.metrics?.evaIntrinsic || 0), 0),
-          evaSumSale: sortedLoans.reduce((sum, loan) => sum + (loan.metrics?.evaSale || 0), 0),
-          diversificationBenefit: 0
-        }
-      };
-      
-      ExcelTemplateService.exportData(portfolioData, 'Complete_Loans_List', 'excel');
-      
+    if (!selectedPortfolioId) {
       toast({
-        title: "Export successful",
-        description: "Data has been successfully exported to Excel format.",
+        title: "Error",
+        description: "Please select a portfolio to export.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const portfolio = portfolioService.getPortfolioById(selectedPortfolioId);
+    if (!portfolio) {
+      toast({
+        title: "Error",
+        description: "Portfolio not found.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    toast({
+      title: "Export in progress",
+      description: `Exporting ${portfolio.name} portfolio...`,
         variant: "default"
       });
-    } catch (error) {
-      console.error("Export error:", error);
+    
+    try {
+      ExcelTemplateService.exportData(portfolio, 'Loans', 'excel');
+    } catch (error: any) {
       toast({
-        title: "Export error",
-        description: "An error occurred while exporting data.",
+        title: "Error",
+        description: `Export failed: ${error.message}`,
         variant: "destructive"
       });
     }
   };
   
-  // Function to handle loan deletion
   const handleDelete = (loanId: string) => {
-    // Open confirmation dialog
     setLoanToDelete(loanId);
     setDeleteDialogOpen(true);
   };
   
-  // Function to confirm deletion
   const confirmDelete = () => {
     if (loanToDelete) {
       try {
         const success = loanDataService.deleteLoan(loanToDelete);
-        
         if (success) {
           toast({
-            title: "Loan deleted",
-            description: "The loan has been successfully deleted.",
-            variant: "default",
+            title: "Success",
+            description: "Loan deleted successfully.",
+            variant: "default"
           });
-          
-          // Reload the loans list
-          loadLoans();
+          // Reload loans for current portfolio
+          if (selectedPortfolioId) {
+            loadLoansForPortfolio(selectedPortfolioId);
+          }
         } else {
           toast({
             title: "Error",
-            description: "Unable to delete this loan.",
+            description: "Failed to delete loan.",
             variant: "destructive",
           });
         }
@@ -299,36 +341,187 @@ const LoansList = () => {
       }
     }
     
-    // Close dialog and reset state
     setDeleteDialogOpen(false);
     setLoanToDelete(null);
   };
 
+  const handleAddLoanWithPortfolio = () => {
+    if (!newLoanPortfolioId) {
+      toast({
+        title: "Error",
+        description: "Please select a portfolio for the new loan.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Navigate to new loan page with portfolio pre-selected
+    navigate(`/loans/new?portfolio=${newLoanPortfolioId}`);
+    setAddLoanDialogOpen(false);
+    setNewLoanPortfolioId('');
+  };
+
+  const selectedPortfolio = portfolios.find(p => p.id === selectedPortfolioId);
+  const getClientTypeLabel = (clientType?: ClientType) => {
+    const labels = {
+      banqueCommerciale: 'Commercial Bank',
+      banqueInvestissement: 'Investment Bank',
+      assurance: 'Insurance',
+      fonds: 'Fund',
+      entreprise: 'Corporate'
+    };
+    return clientType ? labels[clientType] : 'Not specified';
+  };
+
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <h1 className="text-2xl font-bold">Loan Portfolio</h1>
+        <h1 className="text-2xl font-bold">Loans Management</h1>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => navigate('/import')}>
             <Upload className="h-4 w-4 mr-2" />
             Import
           </Button>
-          <Button variant="outline" onClick={handleExport}>
+          <Button variant="outline" onClick={handleExport} disabled={!selectedPortfolioId}>
             <Download className="h-4 w-4 mr-2" />
             Export
           </Button>
-          <Button onClick={() => navigate('/loans/new')}>
+          <Dialog open={addLoanDialogOpen} onOpenChange={setAddLoanDialogOpen}>
+            <DialogTrigger asChild>
+              <Button>
             <Plus className="h-4 w-4 mr-2" />
-            New Loan
+                New Loan
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add New Loan</DialogTitle>
+                <DialogDescription>
+                  Select a portfolio for the new loan.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="loan-portfolio">Target Portfolio</Label>
+                  <Select value={newLoanPortfolioId} onValueChange={setNewLoanPortfolioId}>
+                    <SelectTrigger id="loan-portfolio">
+                      <SelectValue placeholder="Select a portfolio" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {portfolios.map(portfolio => (
+                        <SelectItem key={portfolio.id} value={portfolio.id}>
+                          <div className="flex items-center justify-between w-full">
+                            <span>{portfolio.name}</span>
+                            <div className="flex items-center gap-2 ml-2">
+                              <Badge variant="secondary" className="text-xs">
+                                {portfolio.loanCount} loans
+                              </Badge>
+                              {portfolio.isDefault && (
+                                <Badge variant="outline" className="text-xs">Default</Badge>
+                              )}
+                            </div>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setAddLoanDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleAddLoanWithPortfolio}>
+                  Continue
           </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
       
+      {/* Portfolio Selection */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Briefcase className="h-5 w-5" />
+            Portfolio Selection
+          </CardTitle>
+          <CardDescription>
+            Choose a portfolio to view and manage its loans
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4">
+            <div className="grid gap-2">
+              <Label>Active Portfolio</Label>
+              <Select value={selectedPortfolioId} onValueChange={handlePortfolioChange}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a portfolio" />
+                </SelectTrigger>
+                <SelectContent>
+                  {portfolios.map(portfolio => (
+                    <SelectItem key={portfolio.id} value={portfolio.id}>
+                      <div className="flex items-center justify-between w-full">
+                        <span>{portfolio.name}</span>
+                        <div className="flex items-center gap-2 ml-2">
+                          <Badge variant="secondary" className="text-xs">
+                            {portfolio.loanCount} loans
+                          </Badge>
+                          {portfolio.isDefault && (
+                            <Badge variant="outline" className="text-xs">Default</Badge>
+                          )}
+                        </div>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            {selectedPortfolio && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 p-4 bg-muted/50 rounded-lg">
+                <div>
+                  <Label className="text-sm text-muted-foreground">Portfolio</Label>
+                  <p className="font-medium">{selectedPortfolio.name}</p>
+                </div>
+                <div>
+                  <Label className="text-sm text-muted-foreground">Client Type</Label>
+                  <p className="font-medium">{getClientTypeLabel(selectedPortfolio.clientType)}</p>
+                </div>
+                <div>
+                  <Label className="text-sm text-muted-foreground">Total Loans</Label>
+                  <p className="font-medium">{selectedPortfolio.loanCount}</p>
+                </div>
+                <div>
+                  <Label className="text-sm text-muted-foreground">Total Exposure</Label>
+                  <p className="font-medium">{formatCurrency(selectedPortfolio.totalExposure)}</p>
+                </div>
+              </div>
+            )}
+            
+            {!selectedPortfolioId && (
+              <Alert>
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  Please select a portfolio to view its loans.
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+      
+      {/* Loans List */}
+      {selectedPortfolioId && (
+        <>
+          {/* Search and Filters */}
       <div className="flex flex-col md:flex-row gap-4 items-center">
         <div className="relative w-full md:w-auto flex-1">
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search for a loan..."
+                placeholder="Search loans..."
             className="pl-8"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -336,10 +529,7 @@ const LoansList = () => {
         </div>
         
         <div className="flex gap-2 w-full md:w-auto">
-          <Select
-            value={statusFilter}
-            onValueChange={setStatusFilter}
-          >
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-full md:w-[150px]">
               <div className="flex items-center">
                 <Filter className="h-4 w-4 mr-2" />
@@ -355,10 +545,7 @@ const LoansList = () => {
             </SelectContent>
           </Select>
           
-          <Select
-            value={sortField}
-            onValueChange={setSortField}
-          >
+              <Select value={sortField} onValueChange={setSortField}>
             <SelectTrigger className="w-full md:w-[150px]">
               <div className="flex items-center">
                 <BarChart3 className="h-4 w-4 mr-2" />
@@ -385,6 +572,7 @@ const LoansList = () => {
         </div>
       </div>
       
+          {/* Loans Table */}
       <div className="rounded-md border overflow-hidden">
         <Table>
           <TableHeader>
@@ -418,11 +606,16 @@ const LoansList = () => {
               <TableRow>
                 <TableCell colSpan={10} className="text-center py-8">
                   <div className="flex flex-col items-center gap-3 py-4">
-                    <p className="text-lg font-semibold">No loans in your portfolio</p>
-                    <p className="text-muted-foreground mb-2">Create a new loan to start analyzing your portfolio.</p>
-                    <Button onClick={() => navigate('/loans/new')}>
+                        <Briefcase className="h-12 w-12 text-muted-foreground" />
+                        <p className="text-lg font-semibold">No loans in this portfolio</p>
+                        <p className="text-muted-foreground mb-2">
+                          {searchTerm || statusFilter !== 'all' 
+                            ? 'No loans match your search criteria.' 
+                            : 'This portfolio is empty. Add some loans to get started.'}
+                        </p>
+                        <Button onClick={() => setAddLoanDialogOpen(true)}>
                       <Plus className="h-4 w-4 mr-2" />
-                      New Loan
+                          Add First Loan
                     </Button>
                   </div>
                 </TableCell>
@@ -433,24 +626,24 @@ const LoansList = () => {
                   <TableCell className="font-medium">{loan.name}</TableCell>
                   <TableCell>{loan.clientName}</TableCell>
                   <TableCell>
+                        <Badge variant="outline">
                     {loan.type === 'term' ? 'Term' : 
                      loan.type === 'revolver' ? 'Revolver' : 
-                     loan.type === 'bullet' ? 'Bullet' : 'Amortizing'}
+                           loan.type === 'bullet' ? 'Bullet' : 'Amortizing'}
+                        </Badge>
                   </TableCell>
                   <TableCell>
                     <Badge className={`capitalize ${getLoanStatusColor(loan.status)}`}>
-                      {loan.status === 'active' ? 'Active' : 
-                       loan.status === 'closed' ? 'Closed' : 
-                       loan.status === 'default' ? 'Default' : 'Restructured'}
+                          {loan.status}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">{formatCurrency(loan.originalAmount)}</TableCell>
                   <TableCell className="text-right">{formatPercent(loan.pd)}</TableCell>
                   <TableCell className="text-right">{formatPercent(loan.lgd)}</TableCell>
-                  <TableCell className={`text-right ${(loan.metrics?.evaIntrinsic || 0) > 0 ? 'text-financial-green' : 'text-financial-red'}`}>
+                      <TableCell className={`text-right ${(loan.metrics?.evaIntrinsic || 0) > 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {formatCurrency(loan.metrics?.evaIntrinsic || 0)}
                   </TableCell>
-                  <TableCell className={`text-right ${(loan.metrics?.roe || 0) > defaultCalculationParameters.targetROE ? 'text-financial-green' : 'text-financial-red'}`}>
+                      <TableCell className={`text-right ${(loan.metrics?.roe || 0) > defaultCalculationParameters.targetROE ? 'text-green-600' : 'text-red-600'}`}>
                     {formatPercent(loan.metrics?.roe || 0)}
                   </TableCell>
                   <TableCell>
@@ -462,57 +655,13 @@ const LoansList = () => {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                        <DropdownMenuItem onClick={() => {
-                          try {
-                            // Vérifier que le prêt existe avant de naviguer
-                            const loanExists = loanDataService.getLoanById(loan.id);
-                            if (loanExists) {
-                              navigate(`/loans/${loan.id}`);
-                            } else {
-                              toast({
-                                title: "Error",
-                                description: "This loan does not exist or has been deleted.",
-                                variant: "destructive",
-                              });
-                            }
-                          } catch (error) {
-                            console.error("Navigation error:", error);
-                            toast({
-                              title: "Error",
-                              description: "Unable to display loan details.",
-                              variant: "destructive",
-                            });
-                          }
-                        }}>
+                            <DropdownMenuItem onClick={() => navigate(`/loans/${loan.id}`)}>
                           <Eye className="h-4 w-4 mr-2" />
-                          View
+                              View Details
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => {
-                          try {
-                            // Check if loan exists before navigating
-                            const loanExists = loanDataService.getLoanById(loan.id);
-                            if (loanExists) {
-                              // For now, we use the detail page with an edit parameter
-                              // As there's no specific edit route in App.tsx
-                              navigate(`/loans/${loan.id}?edit=true`);
-                            } else {
-                              toast({
-                                title: "Error",
-                                description: "This loan does not exist or has been deleted.",
-                                variant: "destructive",
-                              });
-                            }
-                          } catch (error) {
-                            console.error("Navigation error:", error);
-                            toast({
-                              title: "Error",
-                              description: "Unable to edit this loan.",
-                              variant: "destructive",
-                            });
-                          }
-                        }}>
+                            <DropdownMenuItem onClick={() => navigate(`/loans/new?edit=true&id=${loan.id}`)}>
                           <Edit className="h-4 w-4 mr-2" />
-                          Edit
+                              Edit
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem 
@@ -520,7 +669,7 @@ const LoansList = () => {
                           onClick={() => handleDelete(loan.id)}
                         >
                           <Trash2 className="h-4 w-4 mr-2" />
-                          Delete
+                              Delete
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -532,7 +681,8 @@ const LoansList = () => {
         </Table>
       </div>
       
-      {/* Pagination and display controls */}
+          {/* Pagination */}
+          {paginatedLoans.length > 0 && (
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Select
@@ -546,10 +696,10 @@ const LoansList = () => {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="5">5 per page</SelectItem>
-              <SelectItem value="10">10 per page</SelectItem>
-              <SelectItem value="20">20 per page</SelectItem>
-              <SelectItem value="50">50 per page</SelectItem>
+                    <SelectItem value="5">5 per page</SelectItem>
+                    <SelectItem value="10">10 per page</SelectItem>
+                    <SelectItem value="20">20 per page</SelectItem>
+                    <SelectItem value="50">50 per page</SelectItem>
             </SelectContent>
           </Select>
           
@@ -558,11 +708,11 @@ const LoansList = () => {
             size="sm"
             onClick={() => setShowAllItems(!showAllItems)}
           >
-            {showAllItems ? "Paginate" : "Show All"}
+                  {showAllItems ? "Paginate" : "Show All"}
           </Button>
         </div>
         
-        {!showAllItems && (
+              {!showAllItems && totalPages > 1 && (
           <div className="flex items-center gap-1">
             <Button
               variant="outline"
@@ -581,8 +731,8 @@ const LoansList = () => {
               <ChevronLeft className="h-4 w-4" />
             </Button>
             
-            <span className="mx-2">
-              Page {currentPage} of {totalPages}
+                  <span className="mx-2 text-sm">
+                    Page {currentPage} of {totalPages}
             </span>
             
             <Button
@@ -604,10 +754,13 @@ const LoansList = () => {
           </div>
         )}
         
-        <div>
-          Showing {paginatedLoans.length} loans out of {sortedLoans.length}
+              <div className="text-sm text-muted-foreground">
+                Showing {paginatedLoans.length} of {sortedLoans.length} loans
         </div>
       </div>
+          )}
+        </>
+      )}
       
       {/* Delete confirmation dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

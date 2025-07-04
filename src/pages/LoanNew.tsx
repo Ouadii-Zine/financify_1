@@ -4,17 +4,22 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Loan, LoanType, LoanStatus, Currency } from '@/types/finance';
+import { Loan, LoanType, LoanStatus, Currency, ClientType, PortfolioSummary } from '@/types/finance';
 import LoanDataService from '@/services/LoanDataService';
-import DynamicColumnsService from '@/services/DynamicColumnsService';
+
+import PortfolioService, { PORTFOLIOS_UPDATED_EVENT } from '@/services/PortfolioService';
+import ClientTemplateService from '@/services/ClientTemplateService';
 import { defaultCalculationParameters } from '@/data/sampleData';
 
 interface LoanFormData {
   id?: string;
   name: string;
   clientName: string;
+  clientType?: ClientType;
+  portfolioId: string;
   type: LoanType;
   status: LoanStatus;
   startDate: string;
@@ -36,25 +41,31 @@ interface LoanFormData {
   commitmentFee?: string;
   agencyFee?: string;
   otherFee?: string;
-  additionalDetails?: Record<string, any>;
+
 }
 
 const LoanNew = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const loanDataService = LoanDataService.getInstance();
-  const dynamicColumnsService = DynamicColumnsService.getInstance();
+  const portfolioService = PortfolioService.getInstance();
+  const clientTemplateService = ClientTemplateService.getInstance();
   
   // Vérifier si nous sommes en mode édition (via le paramètre query)
   const searchParams = new URLSearchParams(location.search);
   const isEditMode = searchParams.get('edit') === 'true';
   const loanId = searchParams.get('id');
+  const preSelectedPortfolioId = searchParams.get('portfolio');
   const [pageTitle, setPageTitle] = useState('New Loan');
-  const [dynamicColumns, setDynamicColumns] = useState<any[]>([]);
+  const [portfolios, setPortfolios] = useState<PortfolioSummary[]>([]);
+  const [isCreatePortfolioOpen, setIsCreatePortfolioOpen] = useState(false);
+  const [newPortfolioName, setNewPortfolioName] = useState('');
   
   const defaultFormData: LoanFormData = {
     name: '',
     clientName: '',
+    clientType: 'banqueCommerciale',
+    portfolioId: '',
     type: 'term',
     status: 'active',
     startDate: new Date().toISOString().split('T')[0],
@@ -75,25 +86,24 @@ const LoanNew = () => {
     upfrontFee: '0',
     commitmentFee: '0',
     agencyFee: '0',
-    otherFee: '0',
-    additionalDetails: {}
+    otherFee: '0'
   };
   
   const [formData, setFormData] = useState<LoanFormData>(defaultFormData);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  // Load dynamic columns on component mount
+  // Load portfolios on component mount
   useEffect(() => {
-    const columns = dynamicColumnsService.getDynamicColumns();
-    setDynamicColumns(columns);
+    // Load portfolios
+    const portfolioSummaries = portfolioService.getPortfolioSummaries();
+    setPortfolios(portfolioSummaries);
     
-    // Initialize additional details with default values
-    const defaultValues = dynamicColumnsService.getDefaultValues();
     setFormData(prev => ({
       ...prev,
-      additionalDetails: defaultValues
+      // Set pre-selected portfolio if provided in URL
+      portfolioId: preSelectedPortfolioId || (portfolioSummaries.length > 0 ? portfolioSummaries.find(p => p.isDefault)?.id || portfolioSummaries[0].id : '')
     }));
-  }, []);
+  }, [preSelectedPortfolioId]);
   
   // Effect to load loan data for editing
   useEffect(() => {
@@ -123,6 +133,8 @@ const LoanNew = () => {
             id: loanToEdit.id,
             name: loanToEdit.name,
             clientName: loanToEdit.clientName,
+            clientType: loanToEdit.clientType || 'banqueCommerciale',
+            portfolioId: loanToEdit.portfolioId,
             type: loanToEdit.type,
             status: loanToEdit.status,
             startDate: loanToEdit.startDate,
@@ -143,8 +155,7 @@ const LoanNew = () => {
             upfrontFee: loanToEdit.fees.upfront.toString(),
             commitmentFee: loanToEdit.fees.commitment.toString(),
             agencyFee: loanToEdit.fees.agency.toString(),
-            otherFee: loanToEdit.fees.other.toString(),
-            additionalDetails: loanToEdit.additionalDetails || {}
+            otherFee: loanToEdit.fees.other.toString()
           });
         } else {
           toast({
@@ -177,15 +188,7 @@ const LoanNew = () => {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleDynamicFieldChange = (columnKey: string, value: any) => {
-    setFormData(prev => ({
-      ...prev,
-      additionalDetails: {
-        ...prev.additionalDetails,
-        [columnKey]: value
-      }
-    }));
-  };
+
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -200,6 +203,8 @@ const LoanNew = () => {
         id: loanId,
         name: formData.name,
         clientName: formData.clientName,
+        clientType: formData.clientType,
+        portfolioId: formData.portfolioId,
         type: formData.type as LoanType,
         status: formData.status as LoanStatus,
         startDate: formData.startDate,
@@ -223,7 +228,6 @@ const LoanNew = () => {
         internalRating: formData.internalRating,
         sector: formData.sector,
         country: formData.country,
-        additionalDetails: formData.additionalDetails,
         cashFlows: [], // Conserver les cash flows existants en cas d'édition
         metrics: {
           evaIntrinsic: 0,
@@ -254,7 +258,7 @@ const LoanNew = () => {
         }
       } else {
         // Creation mode: add new loan
-        loanDataService.addLoan(preparedLoan, defaultCalculationParameters);
+        loanDataService.addLoan(preparedLoan, formData.portfolioId, defaultCalculationParameters);
         
         toast({
           title: "Loan created",
@@ -280,57 +284,7 @@ const LoanNew = () => {
     }
   };
 
-  const renderDynamicField = (column: any) => {
-    const value = formData.additionalDetails?.[column.key] || '';
-    
-    switch (column.type) {
-      case 'number':
-        return (
-          <Input
-            type="number"
-            step="any"
-            value={value}
-            onChange={(e) => handleDynamicFieldChange(column.key, parseFloat(e.target.value) || 0)}
-            placeholder={`Enter ${column.label}`}
-          />
-        );
-      
-      case 'date':
-        return (
-          <Input
-            type="date"
-            value={value}
-            onChange={(e) => handleDynamicFieldChange(column.key, e.target.value)}
-          />
-        );
-      
-      case 'boolean':
-        return (
-          <Select
-            value={value.toString()}
-            onValueChange={(val) => handleDynamicFieldChange(column.key, val === 'true')}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select..." />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="true">Yes</SelectItem>
-              <SelectItem value="false">No</SelectItem>
-            </SelectContent>
-          </Select>
-        );
-      
-      default: // text
-        return (
-          <Input
-            type="text"
-            value={value}
-            onChange={(e) => handleDynamicFieldChange(column.key, e.target.value)}
-            placeholder={`Enter ${column.label}`}
-          />
-        );
-    }
-  };
+
 
   return (
     <div className="space-y-6">
@@ -368,6 +322,54 @@ const LoanNew = () => {
                   placeholder="Company A" 
                   required 
                 />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="portfolioId">Portfolio *</Label>
+                <Select 
+                  value={formData.portfolioId} 
+                  onValueChange={(value) => handleSelectChange('portfolioId', value)}
+                >
+                  <SelectTrigger id="portfolioId">
+                    <SelectValue placeholder="Select a portfolio" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {portfolios.map(portfolio => (
+                      <SelectItem key={portfolio.id} value={portfolio.id}>
+                        <div className="flex items-center justify-between w-full">
+                          <span>{portfolio.name}</span>
+                          <div className="flex items-center gap-2 ml-2">
+                            <Badge variant="secondary" className="text-xs">
+                              {portfolio.loanCount} loans
+                            </Badge>
+                            {portfolio.isDefault && (
+                              <Badge variant="outline" className="text-xs">Default</Badge>
+                            )}
+                          </div>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="clientType">Client Type</Label>
+                <Select 
+                  value={formData.clientType} 
+                  onValueChange={(value) => handleSelectChange('clientType', value)}
+                >
+                  <SelectTrigger id="clientType">
+                    <SelectValue placeholder="Select client type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {clientTemplateService.getClientTypes().map(type => (
+                      <SelectItem key={type.key} value={type.key}>
+                        {type.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               
               <div className="space-y-2">
@@ -572,29 +574,7 @@ const LoanNew = () => {
           </CardContent>
         </Card>
 
-        {/* Dynamic Columns Section */}
-        {dynamicColumns.length > 0 && (
-          <Card className="mt-6">
-            <CardHeader>
-              <CardTitle>Additional Details</CardTitle>
-              <CardDescription>
-                Additional fields detected from previous imports
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {dynamicColumns.map((column) => (
-                  <div key={column.key} className="space-y-2">
-                    <Label htmlFor={column.key}>
-                      {column.label}
-                    </Label>
-                    {renderDynamicField(column)}
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
+
 
         <Card className="mt-6">
           <CardFooter className="flex justify-between">

@@ -2,18 +2,19 @@ import { Loan, CalculationParameters, Portfolio } from '../types/finance';
 import { calculateLoanMetrics, calculatePortfolioMetrics } from '../utils/financialCalculations';
 import { sampleLoans, defaultCalculationParameters } from '../data/sampleData';
 import DynamicColumnsService from './DynamicColumnsService';
+import PortfolioService from './PortfolioService';
 
-const LOCAL_STORAGE_KEY = 'financify-portfolio-loans';
-// Définir un événement personnalisé pour les mises à jour de prêts
+// Keep backwards compatibility events
 export const LOANS_UPDATED_EVENT = 'loans-updated';
 
 class LoanDataService {
   private static instance: LoanDataService;
-  private loans: Loan[] = [];
+  private portfolioService: PortfolioService;
   private calculationParams: CalculationParameters = defaultCalculationParameters;
 
   private constructor() {
-    this.loadFromLocalStorage();
+    this.portfolioService = PortfolioService.getInstance();
+    this.migrateExistingData();
   }
 
   static getInstance(): LoanDataService {
@@ -23,80 +24,122 @@ class LoanDataService {
     return this.instance;
   }
 
-  // Déclencher un événement pour informer que les prêts ont été mis à jour
+  // Migrate existing loans to portfolio system
+  private migrateExistingData(): void {
+    const existingData = localStorage.getItem('financify-portfolio-loans');
+    if (existingData) {
+      try {
+        const parsedData = JSON.parse(existingData);
+        if (parsedData.loans && Array.isArray(parsedData.loans)) {
+          const defaultPortfolio = this.portfolioService.getDefaultPortfolio();
+          
+          // Add portfolioId to existing loans and add them to default portfolio
+          const migratedLoans = parsedData.loans.map((loan: any) => ({
+            ...loan,
+            portfolioId: defaultPortfolio.id
+          }));
+          
+          if (migratedLoans.length > 0) {
+            this.portfolioService.addLoansToPortfolio(defaultPortfolio.id, migratedLoans);
+          }
+        }
+        
+        // Remove old storage after migration
+        localStorage.removeItem('financify-portfolio-loans');
+      } catch (error) {
+        console.error('Error migrating existing loan data:', error);
+      }
+    }
+  }
+
+  // Trigger loans updated event for backwards compatibility
   private dispatchLoansUpdated(): void {
-    const event = new CustomEvent(LOANS_UPDATED_EVENT, { detail: this.loans });
+    const allLoans = this.getAllLoans(false);
+    const event = new CustomEvent(LOANS_UPDATED_EVENT, { detail: allLoans });
     window.dispatchEvent(event);
   }
 
-  // Ajouter un prêt
-  addLoan(loan: Loan, params: CalculationParameters = this.calculationParams): void {
-    // Vérifier si l'ID existe déjà
-    if (this.loans.some(l => l.id === loan.id)) {
-      throw new Error(`Un prêt avec l'ID ${loan.id} existe déjà`);
-    }
+  // Add loan to specific portfolio
+  addLoan(loan: Loan, portfolioId?: string, params: CalculationParameters = this.calculationParams): void {
+    const targetPortfolioId = portfolioId || this.portfolioService.getDefaultPortfolio().id;
     
-    console.log('LoanDataService: Ajout d\'un nouveau prêt:', loan);
+    console.log('LoanDataService: Adding new loan to portfolio:', targetPortfolioId, loan);
     
     const metrics = calculateLoanMetrics(loan, params);
-    const newLoan = { ...loan, metrics };
-    this.loans.push(newLoan);
+    const newLoan = { ...loan, metrics, portfolioId: targetPortfolioId };
     
-    console.log('LoanDataService: Prêts après ajout:', this.loans);
-    
-    this.saveToLocalStorage();
+    this.portfolioService.addLoanToPortfolio(targetPortfolioId, newLoan);
     this.dispatchLoansUpdated();
   }
 
-  // Ajouter plusieurs prêts
-  addLoans(loans: Loan[], params: CalculationParameters = this.calculationParams): void {
-    // Filtrer les prêts avec des IDs existants
-    const newLoans = loans.filter(loan => !this.loans.some(l => l.id === loan.id));
+  // Add multiple loans to specific portfolio
+  addLoans(loans: Loan[], portfolioId?: string, params: CalculationParameters = this.calculationParams): void {
+    const targetPortfolioId = portfolioId || this.portfolioService.getDefaultPortfolio().id;
     
-    const loansWithMetrics = newLoans.map(loan => ({
+    const loansWithMetrics = loans.map(loan => ({
       ...loan,
-      metrics: calculateLoanMetrics(loan, params)
+      metrics: calculateLoanMetrics(loan, params),
+      portfolioId: targetPortfolioId
     }));
     
-    this.loans = [...this.loans, ...loansWithMetrics];
-    this.saveToLocalStorage();
+    this.portfolioService.addLoansToPortfolio(targetPortfolioId, loansWithMetrics);
     this.dispatchLoansUpdated();
   }
 
-  // Obtenir tous les prêts (utilisateur + échantillons)
+  // Get all loans across all portfolios (with optional samples)
   getAllLoans(includeSamples: boolean = true): Loan[] {
+    const portfolios = this.portfolioService.getPortfolios();
+    let allLoans: Loan[] = [];
+    
+    portfolios.forEach(portfolio => {
+      allLoans = allLoans.concat(portfolio.loans);
+    });
+    
     if (includeSamples) {
-      // Recalculer les métriques pour les prêts d'échantillon
+      // Add sample loans with metrics
       const samplesWithMetrics = sampleLoans.map(loan => ({
-        ...loan, 
+        ...loan,
+        portfolioId: 'samples',
         metrics: calculateLoanMetrics(loan, this.calculationParams)
       }));
-      
-      return [...samplesWithMetrics, ...this.loans];
+      allLoans = allLoans.concat(samplesWithMetrics);
     }
-    return this.loans;
-  }
-  
-  // Obtenir uniquement les prêts ajoutés par l'utilisateur
-  getLoans(): Loan[] {
-    console.log('LoanDataService: Récupération des prêts utilisateur:', this.loans);
-    // Ensure all loans have default values for dynamic columns
-    return this.loans.map(loan => this.ensureDynamicColumns(loan));
-  }
-  
-  // Obtenir un prêt spécifique par ID
-  getLoanById(id: string, includeSamples: boolean = true): Loan | undefined {
-    // Chercher d'abord dans les prêts utilisateur
-    const userLoan = this.loans.find(loan => loan.id === id);
-    if (userLoan) return this.ensureDynamicColumns(userLoan);
     
-    // Si pas trouvé et includeSamples est true, chercher dans les échantillons
+    return allLoans;
+  }
+  
+  // Get loans from specific portfolio
+  getLoans(portfolioId?: string): Loan[] {
+    if (portfolioId) {
+      return this.portfolioService.getLoansByPortfolio(portfolioId).map(loan => this.ensureDynamicColumns(loan));
+    }
+    
+    // Default behavior: get all user loans
+    const portfolios = this.portfolioService.getPortfolios();
+    let allLoans: Loan[] = [];
+    
+    portfolios.forEach(portfolio => {
+      allLoans = allLoans.concat(portfolio.loans);
+    });
+    
+    return allLoans.map(loan => this.ensureDynamicColumns(loan));
+  }
+  
+  // Get specific loan by ID
+  getLoanById(id: string, includeSamples: boolean = true): Loan | undefined {
+    // Search in portfolios first
+    const result = this.portfolioService.findLoanById(id);
+    if (result) {
+      return this.ensureDynamicColumns(result.loan);
+    }
+    
+    // Search in sample loans if requested
     if (includeSamples) {
       const sampleLoan = sampleLoans.find(loan => loan.id === id);
       if (sampleLoan) {
-        // Recalculer les métriques pour le prêt d'échantillon
         const loanWithMetrics = {
           ...sampleLoan,
+          portfolioId: 'samples',
           metrics: calculateLoanMetrics(sampleLoan, this.calculationParams)
         };
         return this.ensureDynamicColumns(loanWithMetrics);
@@ -106,129 +149,121 @@ class LoanDataService {
     return undefined;
   }
   
-  // Mettre à jour un prêt
+  // Update a loan
   updateLoan(id: string, updatedLoan: Loan, params: CalculationParameters = this.calculationParams): boolean {
-    const index = this.loans.findIndex(loan => loan.id === id);
-    
-    if (index === -1) {
-      return false; // Prêt non trouvé
-    }
+    const result = this.portfolioService.findLoanById(id);
+    if (!result) return false;
     
     const metrics = calculateLoanMetrics(updatedLoan, params);
-    this.loans[index] = { ...updatedLoan, metrics };
-    this.saveToLocalStorage();
-    this.dispatchLoansUpdated();
-    return true;
-  }
-  
-  // Supprimer un prêt
-  deleteLoan(id: string): boolean {
-    const initialLength = this.loans.length;
-    this.loans = this.loans.filter(loan => loan.id !== id);
+    const loanWithMetrics = { ...updatedLoan, metrics };
     
-    if (this.loans.length !== initialLength) {
-      this.saveToLocalStorage();
+    const success = this.portfolioService.updateLoanInPortfolio(result.portfolioId, id, loanWithMetrics);
+    if (success) {
       this.dispatchLoansUpdated();
-      return true;
     }
-    return false;
+    return success;
   }
   
-  // Obtenir un portfolio complet avec métriques calculées
-  getPortfolio(includeSamples: boolean = true): Portfolio {
-    const allLoans = this.getAllLoans(includeSamples);
-    const metrics = calculatePortfolioMetrics(allLoans, this.calculationParams);
+  // Delete a loan
+  deleteLoan(id: string): boolean {
+    const result = this.portfolioService.findLoanById(id);
+    if (!result) return false;
     
-    return {
-      id: 'financify-portfolio',
-      name: 'Portfolio Financify',
-      description: 'Portfolio complet comprenant tous les prêts',
-      loans: allLoans,
-      metrics
-    };
+    const success = this.portfolioService.removeLoanFromPortfolio(result.portfolioId, id);
+    if (success) {
+      this.dispatchLoansUpdated();
+    }
+    return success;
   }
   
-  // Obtenir les paramètres de calcul actuels
+  // Get portfolio with all loans (backwards compatibility)
+  getPortfolio(includeSamples: boolean = true): Portfolio {
+    const defaultPortfolio = this.portfolioService.getDefaultPortfolio();
+    
+    if (includeSamples) {
+      const allLoans = this.getAllLoans(true);
+      const metrics = calculatePortfolioMetrics(allLoans, this.calculationParams);
+      
+      return {
+        id: 'complete-portfolio',
+        name: 'Complete Portfolio',
+        description: 'All portfolios combined including samples',
+        createdDate: defaultPortfolio.createdDate,
+        lastModified: new Date().toISOString(),
+        loans: allLoans,
+        metrics
+      };
+    }
+    
+    return defaultPortfolio;
+  }
+  
+  // Get calculation parameters
   getCalculationParams(): CalculationParameters {
     return this.calculationParams;
   }
   
-  // Mettre à jour les paramètres de calcul
+  // Update calculation parameters
   updateCalculationParams(params: Partial<CalculationParameters>): void {
     this.calculationParams = { ...this.calculationParams, ...params };
     
-    // Recalculer les métriques de tous les prêts avec les nouveaux paramètres
-    this.loans = this.loans.map(loan => ({
-      ...loan,
-      metrics: calculateLoanMetrics(loan, this.calculationParams)
-    }));
+    // Recalculate metrics for all loans in all portfolios
+    const portfolios = this.portfolioService.getPortfolios();
+    portfolios.forEach(portfolio => {
+      const updatedLoans = portfolio.loans.map(loan => ({
+        ...loan,
+        metrics: calculateLoanMetrics(loan, this.calculationParams)
+      }));
+      
+      if (updatedLoans.length > 0) {
+        this.portfolioService.updatePortfolio(portfolio.id, { loans: updatedLoans });
+      }
+    });
     
-    this.saveToLocalStorage();
     this.dispatchLoansUpdated();
   }
 
-  // Sauvegarder les données dans le localStorage
-  private saveToLocalStorage(): void {
-    const dataToSave = JSON.stringify({
-      loans: this.loans,
-      calculationParams: this.calculationParams
-    });
-    
-    console.log('LoanDataService: Sauvegarde dans localStorage:', dataToSave.slice(0, 200) + '...');
-    
-    localStorage.setItem(LOCAL_STORAGE_KEY, dataToSave);
-  }
-
-  // Charger les données depuis le localStorage
+  // Load from localStorage (for backwards compatibility)
   loadFromLocalStorage(): void {
-    const storedData = localStorage.getItem(LOCAL_STORAGE_KEY);
-    console.log('LoanDataService: Données du localStorage récupérées:', storedData ? storedData.slice(0, 200) + '...' : 'null');
-    
-    if (storedData) {
-      try {
-        const parsedData = JSON.parse(storedData);
-        this.loans = parsedData.loans || [];
-        if (parsedData.calculationParams) {
-          this.calculationParams = parsedData.calculationParams;
-        }
-        console.log('LoanDataService: Prêts chargés depuis localStorage:', this.loans);
-      } catch (error) {
-        console.error('Erreur lors du chargement des données du localStorage:', error);
-        // En cas d'erreur, réinitialiser le localStorage
-        localStorage.removeItem(LOCAL_STORAGE_KEY);
-      }
-    }
+    // This is now handled by PortfolioService
+    // Just trigger the migration if needed
+    this.migrateExistingData();
   }
 
-  // Ensure loan has default values for all dynamic columns
+  // Ensure dynamic columns are present
   private ensureDynamicColumns(loan: Loan): Loan {
     const dynamicColumnsService = DynamicColumnsService.getInstance();
     const dynamicColumns = dynamicColumnsService.getDynamicColumns();
     
     if (dynamicColumns.length === 0) {
-      return loan; // No dynamic columns defined yet
+      return loan;
     }
     
+    const additionalDetails = loan.additionalDetails || {};
     const defaultValues = dynamicColumnsService.getDefaultValues();
-    const existingDetails = loan.additionalDetails || {};
     
-    // Merge existing details with default values for missing columns
-    const mergedDetails: Record<string, any> = { ...defaultValues };
-    Object.keys(existingDetails).forEach(key => {
-      mergedDetails[key] = existingDetails[key];
+    // Add missing dynamic columns with default values
+    dynamicColumns.forEach(column => {
+      if (!(column.key in additionalDetails)) {
+        additionalDetails[column.key] = defaultValues[column.key];
+      }
     });
     
     return {
       ...loan,
-      additionalDetails: mergedDetails
+      additionalDetails: Object.keys(additionalDetails).length > 0 ? additionalDetails : undefined
     };
   }
 
-  // Effacer toutes les données utilisateur
+  // Clear all loans (for testing)
   clearLoans(): void {
-    this.loans = [];
-    this.calculationParams = defaultCalculationParameters;
-    localStorage.removeItem(LOCAL_STORAGE_KEY);
+    this.portfolioService.clearAllPortfolios();
+    this.dispatchLoansUpdated();
+  }
+
+  // Portfolio-specific methods (delegate to PortfolioService)
+  getPortfolioService(): PortfolioService {
+    return this.portfolioService;
   }
 }
 

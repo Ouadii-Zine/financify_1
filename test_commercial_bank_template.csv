@@ -1,0 +1,6 @@
+Application Code,Facility ID,Deal ID,Deal Name,As Of Date,Facility Date,Maturity,Long Name Borrower,RAF Borrower,Currency,Internal Rating of Borrower,Business Line,UFO,Place of Booking,Business Unit,TRR Rating of Borrower,Watch List,Loan Margin (bps),Facility Fee (bps),Sector,Zone Géographique
+LOAN IQ,FAC001,DEAL001,Sample Corporate Loan,2024-01-15,2024-01-01,2026-01-01,ABC Corporation Ltd,RAF001,EUR,BBB,Corporate Financing,UFO123,Paris,Corporate Banking,BBB,false,250,50,Manufacturing,Europe
+LOAN IQ,FAC002,DEAL002,Trade Finance Facility,2024-01-15,2024-01-05,2025-12-31,XYZ Trading SA,RAF002,USD,BB,Trade Finance,UFO124,London,Trade Finance,BB+,false,300,75,Commerce,Europe
+MANUAL,FAC003,DEAL003,Project Finance Loan,2024-01-15,2024-01-10,2028-01-10,Green Energy Projects Inc,RAF003,EUR,A,Project Finance,UFO125,Frankfurt,Project Finance,A-,false,200,40,Energy,Europe
+LOAN IQ,FAC004,DEAL004,Working Capital Facility,2024-01-15,2024-01-08,2025-01-08,Tech Innovations Ltd,RAF004,GBP,B+,Corporate Financing,UFO126,London,Corporate Banking,B+,true,400,100,Technology,Europe
+MANUAL,FAC005,DEAL005,Real Estate Loan,2024-01-15,2024-01-12,2029-01-12,Property Developers SA,RAF005,EUR,BBB-,Project Finance,UFO127,Madrid,Real Estate,BBB-,false,180,30,Real Estate,Europe 

@@ -1,12 +1,14 @@
-
 export type LoanStatus = 'active' | 'closed' | 'default' | 'restructured';
 export type LoanType = 'term' | 'revolver' | 'bullet' | 'amortizing';
 export type Currency = 'EUR' | 'USD' | 'GBP' | 'CHF' | 'JPY';
+export type ClientType = 'banqueCommerciale' | 'banqueInvestissement' | 'assurance' | 'fonds' | 'entreprise';
 
 export interface Loan {
   id: string;
   name: string;
   clientName: string;
+  clientType?: ClientType;
+  portfolioId: string;
   type: LoanType;
   status: LoanStatus;
   startDate: string;
@@ -61,7 +63,24 @@ export interface Portfolio {
   id: string;
   name: string;
   description?: string;
+  clientType?: ClientType;
+  createdDate: string;
+  lastModified: string;
+  isDefault?: boolean;
   loans: Loan[];
+  metrics: PortfolioMetrics;
+}
+
+export interface PortfolioSummary {
+  id: string;
+  name: string;
+  description?: string;
+  clientType?: ClientType;
+  createdDate: string;
+  lastModified: string;
+  isDefault?: boolean;
+  loanCount: number;
+  totalExposure: number;
   metrics: PortfolioMetrics;
 }
 
