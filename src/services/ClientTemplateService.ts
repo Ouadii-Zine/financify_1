@@ -72,6 +72,45 @@ export const COLUMN_DEFINITIONS: Record<string, ColumnDefinition> = {
     required: true 
   },
 
+  // 💰 AMOUNT FIELDS (Input required)
+  originalAmount: { 
+    label: "Original Amount", 
+    type: "currency", 
+    required: true 
+  },
+  outstandingAmount: { 
+    label: "Outstanding Amount", 
+    type: "currency", 
+    required: false 
+  },
+  drawnAmount: { 
+    label: "Drawn Amount", 
+    type: "currency", 
+    required: false 
+  },
+  undrawnAmount: { 
+    label: "Undrawn Amount", 
+    type: "currency", 
+    required: false 
+  },
+  ead: { 
+    label: "EAD (Exposure at Default)", 
+    type: "currency", 
+    required: false 
+  },
+
+  // 📊 RISK PARAMETERS (Input required)
+  pd: { 
+    label: "PD (Probability of Default)", 
+    type: "percentage", 
+    required: false 
+  },
+  lgd: { 
+    label: "LGD (Loss Given Default)", 
+    type: "percentage", 
+    required: false 
+  },
+
   // 🔵 AUTOMATICALLY CALCULATED COLUMNS (Excel formulas converted)
   totalOutstanding: { 
     label: "Total Outstanding", 
@@ -234,9 +273,10 @@ export const CLIENT_CONFIGURATIONS: Record<string, ClientConfiguration> = {
     requiredFields: [
       "applicationCode", "facilityId", "dealId", "dealName", "asofDate", 
       "facilityDate", "maturity", "longNameBorrower", "rafBorrower", 
-      "currency", "internalRating", "businessLine"
+      "currency", "originalAmount", "internalRating", "businessLine"
     ],
     optionalFields: [
+      "outstandingAmount", "drawnAmount", "undrawnAmount", "ead", "pd", "lgd",
       "ufo", "placeOfBooking", "businessUnit", "trrRating", "watchList", 
       "loanMarginBps", "facilityFeeBps", "sector", "zoneGeographique"
     ],
@@ -403,6 +443,13 @@ class ClientTemplateService {
       currency: ['ccy', 'curr', 'devise'],
       internalRating: ['rating', 'internal_rating', 'internal rating', 'grade'],
       businessLine: ['business_line', 'business line', 'line_of_business', 'lob'],
+      originalAmount: ['original_amount', 'loan_amount', 'loan amount', 'amount', 'principal', 'facility_amount'],
+      outstandingAmount: ['outstanding_amount', 'outstanding', 'balance', 'current_balance'],
+      drawnAmount: ['drawn_amount', 'drawn', 'utilised_amount', 'utilized_amount'],
+      undrawnAmount: ['undrawn_amount', 'undrawn', 'available', 'commitment_available'],
+      ead: ['ead', 'exposure_at_default', 'exposure at default'],
+      pd: ['pd', 'probability_of_default', 'probability of default', 'default_probability'],
+      lgd: ['lgd', 'loss_given_default', 'loss given default', 'recovery_rate'],
       loanMarginBps: ['margin', 'loan_margin', 'loan margin', 'spread', 'margin_bps'],
       facilityFeeBps: ['facility_fee', 'facility fee', 'fee', 'commitment_fee'],
       sector: ['industry', 'sector_code', 'industry_sector'],

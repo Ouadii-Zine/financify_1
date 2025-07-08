@@ -54,9 +54,9 @@ const Import = () => {
   const [isCreatePortfolioOpen, setIsCreatePortfolioOpen] = useState(false);
   const [newPortfolioName, setNewPortfolioName] = useState('');
   const [templateDocs, setTemplateDocs] = useState<Record<string, string>>({
-    prets: generateTemplateDocumentation('prets'),
+    loans: generateTemplateDocumentation('loans'),
     cashflows: generateTemplateDocumentation('cashflows'),
-    parametres: generateTemplateDocumentation('parametres')
+    parameters: generateTemplateDocumentation('parameters')
   });
   
   const loanDataService = LoanDataService.getInstance();
@@ -184,6 +184,64 @@ const Import = () => {
     return 'term';
   };
 
+  // Helper function to calculate PD based on credit rating
+  const calculatePDFromRating = (rating: string): number => {
+    const ratingPDMapping: Record<string, number> = {
+      'AAA': 0.0001,  // 0.01%
+      'AA+': 0.0002,  // 0.02%
+      'AA': 0.0003,   // 0.03%
+      'AA-': 0.0005,  // 0.05%
+      'A+': 0.0008,   // 0.08%
+      'A': 0.0012,    // 0.12%
+      'A-': 0.0017,   // 0.17%
+      'BBB+': 0.0025, // 0.25%
+      'BBB': 0.0041,  // 0.41%
+      'BBB-': 0.0070, // 0.70%
+      'BB+': 0.0121,  // 1.21%
+      'BB': 0.0207,   // 2.07%
+      'BB-': 0.0341,  // 3.41%
+      'B+': 0.0564,   // 5.64%
+      'B': 0.0929,    // 9.29%
+      'B-': 0.1529,   // 15.29%
+      'CCC+': 0.2267, // 22.67%
+      'CCC': 0.2267,  // 22.67%
+      'CCC-': 0.2267, // 22.67%
+      'CC': 0.3500,   // 35.00%
+      'C': 0.5000,    // 50.00%
+      'D': 1.0000     // 100.00%
+    };
+    
+    return ratingPDMapping[rating] || ratingPDMapping['BB']; // Default to BB
+  };
+
+  // Helper function to calculate LGD based on credit rating and loan type
+  const calculateLGDFromRating = (rating: string, loanType: string): number => {
+    // Base LGD by rating category
+    const baseLGD: Record<string, number> = {
+      'AAA': 0.30,
+      'AA+': 0.30, 'AA': 0.30, 'AA-': 0.30,
+      'A+': 0.35, 'A': 0.35, 'A-': 0.35,
+      'BBB+': 0.40, 'BBB': 0.45, 'BBB-': 0.50,
+      'BB+': 0.55, 'BB': 0.60, 'BB-': 0.65,
+      'B+': 0.70, 'B': 0.75, 'B-': 0.80,
+      'CCC+': 0.85, 'CCC': 0.90, 'CCC-': 0.95,
+      'CC': 0.95, 'C': 0.98, 'D': 1.00
+    };
+
+    // Adjustments by loan type
+    const typeAdjustment: Record<string, number> = {
+      'term': 0.00,      // Base - secured term loans
+      'revolver': 0.05,  // Higher risk - revolving facilities
+      'bullet': -0.05,   // Lower risk - bullet payments
+      'amortizing': -0.02 // Lower risk - regular amortization
+    };
+
+    const base = baseLGD[rating] || baseLGD['BB']; // Default to BB
+    const adjustment = typeAdjustment[loanType] || 0;
+    
+    return Math.min(Math.max(base + adjustment, 0.15), 0.95); // Clamp between 15% and 95%
+  };
+
   // Create dynamic loan object from raw data using template mapping
   const createLoanFromTemplateData = (
     rawRow: Record<string, any>, 
@@ -268,6 +326,29 @@ const Import = () => {
           loan.fees = loan.fees || {};
           loan.fees.upfront = parsedValue ? parsedValue / 10000 : 0;
           break;
+        case 'originalAmount':
+          loan.originalAmount = parsedValue || 0;
+          break;
+        case 'outstandingAmount':
+          loan.outstandingAmount = parsedValue || 0;
+          break;
+        case 'drawnAmount':
+          loan.drawnAmount = parsedValue || 0;
+          break;
+        case 'undrawnAmount':
+          loan.undrawnAmount = parsedValue || 0;
+          break;
+        case 'ead':
+          loan.ead = parsedValue || 0;
+          break;
+        case 'pd':
+          // PD should be in decimal format (0.01 = 1%)
+          loan.pd = parsedValue || 0;
+          break;
+        case 'lgd':
+          // LGD should be in decimal format (0.45 = 45%)
+          loan.lgd = parsedValue || 0;
+          break;
         default:
           // Store unmapped template fields in additional details
           if (!loan.additionalDetails) loan.additionalDetails = {};
@@ -319,15 +400,33 @@ const Import = () => {
       }
     }
     
-    loan.originalAmount = originalAmount || 1000000; // Default 1M if no amount found
-    loan.outstandingAmount = parseFloat(String(rawRow.outstandingAmount || rawRow.Encours || originalAmount || 0));
-    loan.drawnAmount = parseFloat(String(rawRow.drawnAmount || rawRow['Montant tiré'] || originalAmount || 0));
-    loan.undrawnAmount = parseFloat(String(rawRow.undrawnAmount || rawRow['Montant non tiré'] || 0));
-    loan.ead = parseFloat(String(rawRow.ead || rawRow.EAD || loan.drawnAmount || 0));
+    // Use template-mapped amounts first, then fallback to common field names
+    if (!loan.originalAmount) {
+      loan.originalAmount = originalAmount || 1000000; // Default 1M if no amount found
+    }
+    if (!loan.outstandingAmount) {
+      loan.outstandingAmount = parseFloat(String(rawRow.outstandingAmount || rawRow.Encours || loan.originalAmount || 0));
+    }
+    if (!loan.drawnAmount) {
+      loan.drawnAmount = parseFloat(String(rawRow.drawnAmount || rawRow['Montant tiré'] || loan.originalAmount || 0));
+    }
+    if (!loan.undrawnAmount) {
+      loan.undrawnAmount = parseFloat(String(rawRow.undrawnAmount || rawRow['Montant non tiré'] || 0));
+    }
+    if (!loan.ead) {
+      loan.ead = parseFloat(String(rawRow.ead || rawRow.EAD || loan.drawnAmount || 0));
+    }
 
-    // Handle risk parameters with percentage conversion
-    loan.pd = parseFloat(String(rawRow.pd || rawRow.PD || '1')) / (parseFloat(String(rawRow.pd || rawRow.PD || '1')) > 1 ? 100 : 1);
-    loan.lgd = parseFloat(String(rawRow.lgd || rawRow.LGD || '45')) / (parseFloat(String(rawRow.lgd || rawRow.LGD || '45')) > 1 ? 100 : 1);
+    // Handle risk parameters - calculate from rating if not provided
+    if (!loan.pd || loan.pd === 0) {
+      // Calculate PD based on internal rating
+      loan.pd = calculatePDFromRating(loan.internalRating);
+    }
+    
+    if (!loan.lgd || loan.lgd === 0) {
+      // Calculate LGD based on internal rating and loan type
+      loan.lgd = calculateLGDFromRating(loan.internalRating, loan.type);
+    }
 
     // Handle margin/rate fields
     if (!loan.margin) {
@@ -470,7 +569,7 @@ const Import = () => {
           console.log('📊 Processing Excel file...');
           parseResult = await parseExcel(file);
         } else {
-          setImportErrors(['Format de fichier non supporté. Veuillez utiliser CSV ou Excel.']);
+          setImportErrors(['Unsupported file format. Please use CSV or Excel.']);
           return;
         }
         
@@ -482,7 +581,7 @@ const Import = () => {
         console.log('🔍 Parsed loans preview:', parsedLoans[0]);
         
         if (parsedLoans.length === 0) {
-          setImportErrors(['Aucune donnée trouvée dans le fichier.']);
+          setImportErrors(['No data found in the file.']);
           return;
         }
         
@@ -493,15 +592,15 @@ const Import = () => {
         parsedLoans.forEach((loan, index) => {
           // Critical errors (block import)
           if (isNaN(loan.originalAmount || 0) || (loan.originalAmount || 0) <= 0) {
-            errors.push(`Ligne ${index + 1}: Le montant du prêt est invalide (${loan.originalAmount}).`);
+            errors.push(`Row ${index + 1}: Loan amount is invalid (${loan.originalAmount}).`);
           }
           
           // Warnings (allow import but inform user)
           if (!loan.name || loan.name.trim() === '') {
-            warnings.push(`Ligne ${index + 1}: Le nom du prêt est manquant. Utilisation de "Unnamed Loan".`);
+            warnings.push(`Row ${index + 1}: Loan name is missing. Using "Unnamed Loan".`);
           }
           if (!loan.clientName || loan.clientName.trim() === '') {
-            warnings.push(`Ligne ${index + 1}: Le nom du client est manquant. Utilisation de "Unknown Client".`);
+            warnings.push(`Row ${index + 1}: Client name is missing. Using "Unknown Client".`);
           }
         });
         
@@ -530,7 +629,7 @@ const Import = () => {
         
       } catch (error: any) {
         console.error('❌ Error processing file:', error);
-        setImportErrors([`Erreur lors de l'analyse du fichier: ${error.message}`]);
+        setImportErrors([`Error analyzing file: ${error.message}`]);
         toast({
           title: "File processing error",
           description: error.message,
@@ -568,7 +667,7 @@ const Import = () => {
         } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
           parseResult = await parseExcel(file);
         } else {
-          setImportErrors(['Format de fichier non supporté. Veuillez utiliser CSV ou Excel.']);
+          setImportErrors(['Unsupported file format. Please use CSV or Excel.']);
           return;
         }
         
@@ -576,16 +675,16 @@ const Import = () => {
         setRawImportData(rawData);
         
         if (parsedLoans.length === 0) {
-          setImportErrors(['Aucune donnée trouvée dans le fichier.']);
+          setImportErrors(['No data found in the file.']);
           return;
         }
         
         const errors: string[] = [];
         parsedLoans.forEach((loan, index) => {
-          if (!loan.name) errors.push(`Ligne ${index + 1}: Le nom du prêt est manquant.`);
-          if (!loan.clientName) errors.push(`Ligne ${index + 1}: Le nom du client est manquant.`);
+          if (!loan.name) errors.push(`Row ${index + 1}: Loan name is missing.`);
+          if (!loan.clientName) errors.push(`Row ${index + 1}: Client name is missing.`);
           if (isNaN(loan.originalAmount || 0) || (loan.originalAmount || 0) <= 0) {
-            errors.push(`Ligne ${index + 1}: Le montant du prêt est invalide.`);
+            errors.push(`Row ${index + 1}: Loan amount is invalid.`);
           }
         });
         
@@ -596,7 +695,7 @@ const Import = () => {
         
         setPreviewData(parsedLoans);
       } catch (error: any) {
-        setImportErrors([`Erreur lors de l'analyse du fichier: ${error.message}`]);
+        setImportErrors([`Error analyzing file: ${error.message}`]);
       }
     }
   };

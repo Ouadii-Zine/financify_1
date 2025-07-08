@@ -1,0 +1,6 @@
+Application Code,Facility ID,Deal ID,Deal Name,As Of Date,Facility Date,Maturity,Long Name Borrower,RAF Borrower,Currency,Original Amount,Outstanding Amount,Drawn Amount,Undrawn Amount,EAD (Exposure at Default),PD (Probability of Default),LGD (Loss Given Default),Internal Rating of Borrower,Business Line,Loan Margin (bps),Facility Fee (bps),Sector,Place of Booking
+MANUAL,FAC001,DEAL001,Blue Chip Corp Facility,2024-01-15,2023-01-15,2028-01-15,Blue Chip Corp,RAF001,EUR,25000000,25000000,25000000,0,25000000,0.0001,0.35,AAA,Corporate Financing,50,25,Technology,London
+MANUAL,FAC002,DEAL002,Energy Project Loan,2024-01-15,2022-08-20,2026-08-20,Energy Project Inc,RAF002,EUR,8000000,8000000,8000000,0,8000000,0.06,0.65,CCC,Project Finance,600,100,Energy,Frankfurt
+MANUAL,FAC003,DEAL003,Restructuring Facility,2024-01-15,2023-03-10,2025-03-10,Restructuring Facility,RAF003,EUR,5000000,5000000,5000000,0,5000000,0.25,0.75,D,Corporate Financing,1000,200,Manufacturing,Madrid
+MANUAL,FAC004,DEAL004,Retail Expansion Facility,2024-01-15,2022-12-05,2027-12-05,Retail Expansion Inc,RAF004,EUR,12000000,12000000,12000000,0,12000000,0.0125,0.55,BB+,Corporate Financing,280,50,Retail,Paris
+MANUAL,FAC005,DEAL005,Tech Growth Loan,2024-01-15,2023-06-15,2028-06-15,Growth,RAF005,EUR,15000000,15000000,15000000,0,15000000,0.0012,0.45,A,Corporate Financing,150,30,Technology,Zurich 

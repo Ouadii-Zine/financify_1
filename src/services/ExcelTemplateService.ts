@@ -2,23 +2,24 @@
 import { toast } from "@/hooks/use-toast";
 import { Loan, Portfolio, CalculationParameters } from "../types/finance";
 
-// Templates CSV/Excel pour l'import
-const LOAN_TEMPLATE_CONTENT = `ID,Nom,Client,Type,Statut,Date de début,Date de fin,Devise,Montant original,Encours,Montant tiré,Montant non tiré,PD,LGD,EAD,Marge,Taux de référence,Notation interne,Secteur,Pays,Frais upfront,Frais commitment,Frais agency,Autres frais
-L001,Prêt Entreprise A,Entreprise A,term,active,2023-01-01,2026-01-01,EUR,1000000,900000,800000,100000,1,45,800000,2,3,BB+,Technologie,France,5000,0.5,2000,1000`;
+// CSV/Excel templates for import
+const LOAN_TEMPLATE_CONTENT = `ID,Name,Client,Type,Status,Start Date,End Date,Currency,Original Amount,Outstanding,Drawn Amount,Undrawn Amount,PD,LGD,EAD,Margin,Reference Rate,Internal Rating,Sector,Country,Upfront Fees,Commitment Fees,Agency Fees,Other Fees
+1,Tech Expansion Loan,TechCorp Inc.,term,active,2023-01-15,2028-01-15,EUR,10000000,9500000,8000000,1500000,0.0041,0.55,9000000,0.025,0.015,BBB,Technology,France,100000,0.005,20000,15000
+2,Retail Expansion Facility,RetailGroup SA,revolver,active,2022-08-20,2026-08-20,EUR,15000000,12000000,9000000,3000000,0.0121,0.60,10800000,0.03,0.015,BB,Retail,Germany,75000,0.0045,25000,10000`;
 
-const CASHFLOW_TEMPLATE_CONTENT = `ID,Date,Type,Montant,Manuel,Description
-CF001,2023-02-15,drawdown,200000,false,Tirage initial
-CF002,2023-05-15,repayment,50000,false,Premier remboursement
-CF003,2023-08-15,interest,6000,false,Paiement d'intérêts Q3`;
+const CASHFLOW_TEMPLATE_CONTENT = `ID,Date,Type,Amount,Manual,Description
+CF001,2023-02-15,drawdown,200000,false,Initial drawdown
+CF002,2023-05-15,repayment,50000,false,First repayment
+CF003,2023-08-15,interest,6000,false,Q3 interest payment`;
 
-const PARAMETERS_TEMPLATE_CONTENT = `Paramètre,Valeur
+const PARAMETERS_TEMPLATE_CONTENT = `Parameter,Value
 targetROE,0.12
 corporateTaxRate,0.25
 capitalRatio,0.08
 fundingCost,0.015
 operationalCostRatio,0.005`;
 
-// Structure pour les rapports
+// Report structure
 interface ReportFormat {
   type: 'excel' | 'pdf' | 'csv';
   mimeType: string;
@@ -32,28 +33,28 @@ interface ReportType {
   getContent: (data: any) => string;
 }
 
-// Formats de rapport disponibles
+// Available report formats
 const REPORT_FORMATS: ReportFormat[] = [
   { type: 'excel', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', extension: '.xlsx' },
   { type: 'pdf', mimeType: 'application/pdf', extension: '.pdf' },
   { type: 'csv', mimeType: 'text/csv', extension: '.csv' }
 ];
 
-// Types de rapports disponibles
+// Available report types
 const REPORT_TYPES: ReportType[] = [
   {
     name: 'Performance',
-    description: 'Analyse détaillée des performances du portefeuille',
+    description: 'Detailed portfolio performance analysis',
     formats: REPORT_FORMATS,
     getContent: (portfolio: Portfolio) => {
-      // Contenu du rapport de performance
-      let content = 'Rapport de Performance\n\n';
-      content += `Portefeuille: ${portfolio.name}\n`;
-      content += `Exposition Totale: ${portfolio.metrics.totalExposure}\n`;
-      content += `ROE Portfolio: ${(portfolio.metrics.portfolioROE * 100).toFixed(2)}%\n`;
-      content += `RAROC Portfolio: ${(portfolio.metrics.portfolioRAROC * 100).toFixed(2)}%\n\n`;
+      // Performance report content
+      let content = 'Performance Report\n\n';
+      content += `Portfolio: ${portfolio.name}\n`;
+      content += `Total Exposure: ${portfolio.metrics.totalExposure}\n`;
+      content += `Portfolio ROE: ${(portfolio.metrics.portfolioROE * 100).toFixed(2)}%\n`;
+      content += `Portfolio RAROC: ${(portfolio.metrics.portfolioRAROC * 100).toFixed(2)}%\n\n`;
       
-      content += 'Détail des prêts:\n';
+      content += 'Loan Details:\n';
       portfolio.loans.forEach(loan => {
         content += `${loan.name}, ROE: ${((loan.metrics?.roe || 0) * 100).toFixed(2)}%, EVA: ${loan.metrics?.evaIntrinsic || 0}\n`;
       });
@@ -62,18 +63,18 @@ const REPORT_TYPES: ReportType[] = [
     }
   },
   {
-    name: 'Risque',
-    description: 'Analyse détaillée des risques du portefeuille',
+    name: 'Risk',
+    description: 'Detailed portfolio risk analysis',
     formats: REPORT_FORMATS,
     getContent: (portfolio: Portfolio) => {
-      // Contenu du rapport de risque
-      let content = 'Rapport de Risque\n\n';
-      content += `Portefeuille: ${portfolio.name}\n`;
-      content += `Expected Loss Total: ${portfolio.metrics.totalExpectedLoss}\n`;
-      content += `PD Moyenne: ${(portfolio.metrics.weightedAveragePD * 100).toFixed(2)}%\n`;
-      content += `LGD Moyenne: ${(portfolio.metrics.weightedAverageLGD * 100).toFixed(0)}%\n\n`;
+      // Risk report content
+      let content = 'Risk Report\n\n';
+      content += `Portfolio: ${portfolio.name}\n`;
+      content += `Total Expected Loss: ${portfolio.metrics.totalExpectedLoss}\n`;
+      content += `Average PD: ${(portfolio.metrics.weightedAveragePD * 100).toFixed(2)}%\n`;
+      content += `Average LGD: ${(portfolio.metrics.weightedAverageLGD * 100).toFixed(0)}%\n\n`;
       
-      content += 'Détail des prêts:\n';
+      content += 'Loan Details:\n';
       portfolio.loans.forEach(loan => {
         content += `${loan.name}, PD: ${(loan.pd * 100).toFixed(2)}%, LGD: ${(loan.lgd * 100).toFixed(0)}%, EL: ${loan.metrics?.expectedLoss || 0}\n`;
       });
@@ -82,38 +83,38 @@ const REPORT_TYPES: ReportType[] = [
     }
   },
   {
-    name: 'Réglementaire',
-    description: 'Rapports conformes aux exigences réglementaires',
+    name: 'Regulatory',
+    description: 'Reports compliant with regulatory requirements',
     formats: REPORT_FORMATS,
     getContent: (portfolio: Portfolio) => {
-      // Contenu du rapport réglementaire
-      let content = 'Rapport Réglementaire\n\n';
-      content += `Portefeuille: ${portfolio.name}\n`;
-      content += `RWA Total: ${portfolio.metrics.totalRWA}\n`;
-      content += `Densité RWA: ${((portfolio.metrics.totalRWA / portfolio.metrics.totalExposure) * 100).toFixed(0)}%\n\n`;
+      // Regulatory report content
+      let content = 'Regulatory Report\n\n';
+      content += `Portfolio: ${portfolio.name}\n`;
+      content += `Total RWA: ${portfolio.metrics.totalRWA}\n`;
+      content += `RWA Density: ${((portfolio.metrics.totalRWA / portfolio.metrics.totalExposure) * 100).toFixed(0)}%\n\n`;
       
-      content += 'Détail des prêts:\n';
+      content += 'Loan Details:\n';
       portfolio.loans.forEach(loan => {
-        content += `${loan.name}, RWA: ${loan.metrics?.rwa || 0}, Capital Requis: ${loan.metrics?.capitalConsumption || 0}\n`;
+        content += `${loan.name}, RWA: ${loan.metrics?.rwa || 0}, Capital Required: ${loan.metrics?.capitalConsumption || 0}\n`;
       });
       
       return content;
     }
   },
   {
-    name: 'Planifiés',
-    description: 'Rapports de planification et prévisions',
+    name: 'Planning',
+    description: 'Planning and forecast reports',
     formats: REPORT_FORMATS,
     getContent: (portfolio: Portfolio) => {
-      // Contenu du rapport planifié
-      let content = 'Rapport de Planification\n\n';
-      content += `Portefeuille: ${portfolio.name}\n`;
-      content += `Exposition Totale: ${portfolio.metrics.totalExposure}\n`;
-      content += `Prévision ROE: ${(portfolio.metrics.portfolioROE * 1.05 * 100).toFixed(2)}%\n`;
+      // Planning report content
+      let content = 'Planning Report\n\n';
+      content += `Portfolio: ${portfolio.name}\n`;
+      content += `Total Exposure: ${portfolio.metrics.totalExposure}\n`;
+      content += `Forecast ROE: ${(portfolio.metrics.portfolioROE * 1.05 * 100).toFixed(2)}%\n`;
       
-      content += '\nPrévisions des Cashflows:\n';
+      content += '\nCashflow Forecasts:\n';
       portfolio.loans.forEach(loan => {
-        content += `${loan.name}, Encours Actuel: ${loan.outstandingAmount}, Encours Prévu: ${loan.outstandingAmount * 0.9}\n`;
+        content += `${loan.name}, Current Outstanding: ${loan.outstandingAmount}, Forecast Outstanding: ${loan.outstandingAmount * 0.9}\n`;
       });
       
       return content;
@@ -121,7 +122,7 @@ const REPORT_TYPES: ReportType[] = [
   }
 ];
 
-// Fonction pour télécharger des gabarits - exportée nommément pour Import.tsx
+// Function to download templates - named export for Import.tsx
 export const downloadExcelTemplate = (templateType: string): { success: boolean; message: string } => {
   try {
     let content = '';
@@ -129,34 +130,34 @@ export const downloadExcelTemplate = (templateType: string): { success: boolean;
     let mimeType = '';
     
     switch (templateType) {
-      case 'prets':
+      case 'loans':
         content = LOAN_TEMPLATE_CONTENT;
-        filename = 'gabarit_prets.csv';
+        filename = 'loan_template.csv';
         mimeType = 'text/csv';
         break;
       case 'cashflows':
         content = CASHFLOW_TEMPLATE_CONTENT;
-        filename = 'gabarit_cashflows.csv';
+        filename = 'cashflow_template.csv';
         mimeType = 'text/csv';
         break;
-      case 'parametres':
+      case 'parameters':
         content = PARAMETERS_TEMPLATE_CONTENT;
-        filename = 'gabarit_parametres.csv';
+        filename = 'parameters_template.csv';
         mimeType = 'text/csv';
         break;
       case 'documentation':
-        content = 'Documentation complète pour l\'import de données...';
-        filename = 'guide_import.txt';
+        content = 'Complete documentation for data import...';
+        filename = 'import_guide.txt';
         mimeType = 'text/plain';
         break;
       default:
         return {
           success: false,
-          message: "Type de gabarit non reconnu"
+          message: "Template type not recognized"
         };
     }
     
-    // Créer et télécharger le fichier
+    // Create and download file
     const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -169,273 +170,167 @@ export const downloadExcelTemplate = (templateType: string): { success: boolean;
     
     return {
       success: true,
-      message: `Le gabarit ${filename} a été téléchargé avec succès.`
+      message: `Template ${filename} has been downloaded successfully.`
     };
   } catch (error) {
-    console.error("Erreur lors du téléchargement du gabarit:", error);
+    console.error("Error downloading template:", error);
     return {
       success: false,
-      message: "Une erreur est survenue lors du téléchargement du gabarit."
+      message: "An error occurred while downloading the template."
     };
   }
 };
 
-// Fonction pour générer de la documentation - exportée nommément pour Import.tsx
+// Function to generate documentation - named export for Import.tsx
 export const generateTemplateDocumentation = (templateType: string): string => {
   switch (templateType) {
-    case 'prets':
-      return `<p>Fichier CSV avec les colonnes suivantes:</p>
+    case 'loans':
+      return `<p>CSV file with the following columns:</p>
       <ul class="list-disc list-inside mt-2 pl-2">
-        <li><strong>ID:</strong> Identifiant unique du prêt (ex: L001)</li>
-        <li><strong>Nom:</strong> Nom du prêt (ex: Prêt Entreprise A)</li>
-        <li><strong>Client:</strong> Nom du client (ex: Entreprise A)</li>
-        <li><strong>Type:</strong> Type de prêt (term, revolver, bullet, amortizing)</li>
-        <li><strong>Statut:</strong> Statut du prêt (active, closed, default, restructured)</li>
-        <li><strong>Date de début/fin:</strong> Format YYYY-MM-DD</li>
-        <li><strong>Devise:</strong> Code devise (EUR, USD, GBP, CHF, JPY)</li>
-        <li><strong>Montants:</strong> Montants numériques en devise</li>
-        <li><strong>PD/LGD:</strong> Valeurs décimales (ex: 0.01 pour 1%)</li>
+        <li><strong>ID:</strong> Unique loan identifier (e.g., L001)</li>
+        <li><strong>Name:</strong> Loan name (e.g., Tech Expansion Loan)</li>
+        <li><strong>Client:</strong> Client name (e.g., TechCorp Inc.)</li>
+        <li><strong>Type:</strong> Loan type (term, revolver, bullet, amortizing)</li>
+        <li><strong>Status:</strong> Loan status (active, closed, default, restructured)</li>
+        <li><strong>Start/End Date:</strong> YYYY-MM-DD format</li>
+        <li><strong>Currency:</strong> Currency code (EUR, USD, GBP, CHF, JPY)</li>
+        <li><strong>Amounts:</strong> Numerical amounts in currency</li>
+        <li><strong>PD/LGD:</strong> Decimal values (e.g., 0.01 for 1%)</li>
+        <li><strong>Margin/Reference Rate:</strong> Decimal values (e.g., 0.025 for 2.5%)</li>
+        <li><strong>Internal Rating:</strong> S&P format (AAA, AA+, AA, etc.)</li>
+        <li><strong>Sector:</strong> Industry sector</li>
+        <li><strong>Country:</strong> Country name</li>
+        <li><strong>Fees:</strong> Various fee types (upfront, commitment, agency, other)</li>
+      </ul>
+      <p class="mt-2"><strong>Important Notes:</strong></p>
+      <ul class="list-disc list-inside mt-2 pl-2">
+        <li>All rates should be in decimal format (0.05 = 5%)</li>
+        <li>Use S&P rating scale for Internal Rating</li>
+        <li>Dates must be in YYYY-MM-DD format</li>
+        <li>Commitment fees are rates (decimal), other fees are absolute amounts</li>
       </ul>`;
       
     case 'cashflows':
-      return `<p>Fichier CSV avec les colonnes suivantes:</p>
+      return `<p>CSV file with the following columns:</p>
       <ul class="list-disc list-inside mt-2 pl-2">
-        <li><strong>ID:</strong> Identifiant unique du cash flow (ex: CF001)</li>
-        <li><strong>Date:</strong> Format YYYY-MM-DD (ex: 2023-02-15)</li>
-        <li><strong>Type:</strong> Type de cash flow (drawdown, repayment, interest, fee)</li>
-        <li><strong>Montant:</strong> Montant en devise</li>
-        <li><strong>Manuel:</strong> true ou false (indique si le cash flow est manuel)</li>
-        <li><strong>Description:</strong> Description du cash flow</li>
+        <li><strong>ID:</strong> Unique cashflow identifier (e.g., CF001)</li>
+        <li><strong>Date:</strong> YYYY-MM-DD format (e.g., 2023-02-15)</li>
+        <li><strong>Type:</strong> Cashflow type (drawdown, repayment, interest, fee)</li>
+        <li><strong>Amount:</strong> Amount in currency</li>
+        <li><strong>Manual:</strong> Boolean (true/false) - manually entered cashflow</li>
+        <li><strong>Description:</strong> Optional description</li>
       </ul>`;
       
-    case 'parametres':
-      return `<p>Fichier CSV avec les colonnes suivantes:</p>
+    case 'parameters':
+      return `<p>CSV file with calculation parameters:</p>
       <ul class="list-disc list-inside mt-2 pl-2">
-        <li><strong>Paramètre:</strong> Nom du paramètre</li>
-        <li><strong>Valeur:</strong> Valeur numérique du paramètre (ex: 0.12 pour 12%)</li>
+        <li><strong>targetROE:</strong> Target return on equity (decimal)</li>
+        <li><strong>corporateTaxRate:</strong> Corporate tax rate (decimal)</li>
+        <li><strong>capitalRatio:</strong> Capital ratio (decimal)</li>
+        <li><strong>fundingCost:</strong> Funding cost rate (decimal)</li>
+        <li><strong>operationalCostRatio:</strong> Operational cost ratio (decimal)</li>
       </ul>
-      <p class="mt-2">Paramètres acceptés: targetROE, corporateTaxRate, capitalRatio, fundingCost, operationalCostRatio</p>`;
+      <p class="mt-2">Accepted parameters: targetROE, corporateTaxRate, capitalRatio, fundingCost, operationalCostRatio</p>`;
       
     default:
-      return "<p>Format non spécifié</p>";
+      return `<p>Template documentation not available for this type.</p>`;
   }
 };
 
-// Service principal exporté par défaut
-const ExcelTemplateService = {
-  // Télécharger un gabarit
-  downloadTemplate: (templateType: 'loans' | 'cashflows' | 'parameters') => {
-    let content = '';
-    let filename = '';
-    let mimeType = '';
-    
-    switch (templateType) {
-      case 'loans':
-        content = LOAN_TEMPLATE_CONTENT;
-        filename = 'gabarit_prets.csv';
-        mimeType = 'text/csv';
-        break;
-      case 'cashflows':
-        content = CASHFLOW_TEMPLATE_CONTENT;
-        filename = 'gabarit_cashflows.csv';
-        mimeType = 'text/csv';
-        break;
-      case 'parameters':
-        content = PARAMETERS_TEMPLATE_CONTENT;
-        filename = 'gabarit_parametres.csv';
-        mimeType = 'text/csv';
-        break;
-      default:
-        toast({
-          title: "Erreur",
-          description: "Type de gabarit non reconnu",
-          variant: "destructive"
-        });
-        return;
-    }
-    
-    // Créer et télécharger le fichier
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    
-    toast({
-      title: "Téléchargement réussi",
-      description: `Le gabarit ${filename} a été téléchargé avec succès.`,
-      variant: "default"
-    });
-  },
-  
-  // Générer la documentation d'un gabarit
-  generateDocumentation: (templateType: string): string => {
-    return generateTemplateDocumentation(templateType);
-  },
-  
-  // Export complet des données
-  exportData: (data: Portfolio, reportName: string, format: 'excel' | 'csv' = 'excel') => {
-    try {
-      if (!data || !data.loans) {
-        throw new Error("Données de portfolio invalides pour l'export");
-      }
-      
-      const content = ExcelTemplateService.generatePortfolioExport(data);
-      const filename = `${reportName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.${format === 'excel' ? 'xlsx' : 'csv'}`;
-      const mimeType = format === 'excel' 
-        ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        : 'text/csv';
-      
-      if (format === 'excel') {
-        ExcelTemplateService.exportExcel(content, filename);
-      } else {
-        ExcelTemplateService.exportCSV(content, filename);
-      }
-      
-      return {
-        success: true,
-        message: `Les données ont été exportées avec succès au format ${format.toUpperCase()}.`
-      };
-    } catch (error) {
-      console.error("Erreur lors de l'export des données:", error);
+// Function to generate reports - named export
+export const generateReport = (reportType: string, portfolio: Portfolio, format: string): { success: boolean; content?: string; filename?: string; message: string } => {
+  try {
+    const report = REPORT_TYPES.find(r => r.name.toLowerCase() === reportType.toLowerCase());
+    if (!report) {
       return {
         success: false,
-        message: `Une erreur est survenue lors de l'export des données: ${error}`
+        message: "Report type not found"
       };
     }
-  },
-  
-  // Génère les données complètes du portfolio pour l'export
-  generatePortfolioExport: (portfolio: Portfolio) => {
-    // Créer un objet pour l'export
-    const exportData = {
-      portfolioInfo: {
-        nom: portfolio.name,
-        description: portfolio.description || 'Portfolio Financify',
-        dateExport: new Date().toISOString(),
-        nombrePrets: portfolio.loans.length,
-        expositionTotale: portfolio.metrics.totalExposure,
-        roePortfolio: portfolio.metrics.portfolioROE,
-        rarocPortfolio: portfolio.metrics.portfolioRAROC,
-        expectedLossTotal: portfolio.metrics.totalExpectedLoss,
-        rwaTotal: portfolio.metrics.totalRWA
-      },
-      loans: portfolio.loans.map(loan => ({
-        id: loan.id,
-        nom: loan.name,
-        client: loan.clientName,
-        type: loan.type,
-        statut: loan.status,
-        dateDebut: loan.startDate,
-        dateFin: loan.endDate,
-        devise: loan.currency,
-        montantOriginal: loan.originalAmount,
-        montantRestant: loan.outstandingAmount,
-        montantTire: loan.drawnAmount,
-        montantNonTire: loan.undrawnAmount,
-        pd: loan.pd,
-        lgd: loan.lgd,
-        ead: loan.ead,
-        fraisUpfront: loan.fees.upfront,
-        fraisCommitment: loan.fees.commitment,
-        fraisAgency: loan.fees.agency,
-        autresFrais: loan.fees.other,
-        marge: loan.margin,
-        tauxReference: loan.referenceRate,
-        notationInterne: loan.internalRating,
-        secteur: loan.sector,
-        pays: loan.country,
-        evaIntrinseque: loan.metrics.evaIntrinsic,
-        evaCession: loan.metrics.evaSale,
-        perteAttendue: loan.metrics.expectedLoss,
-        rwa: loan.metrics.rwa,
-        roe: loan.metrics.roe,
-        raroc: loan.metrics.raroc,
-        coutRisque: loan.metrics.costOfRisk,
-        consommationCapital: loan.metrics.capitalConsumption,
-        margeNette: loan.metrics.netMargin,
-        rendementEffectif: loan.metrics.effectiveYield
-      })),
-      cashflows: portfolio.loans.flatMap(loan => 
-        loan.cashFlows.map(cf => ({
-          loanId: loan.id,
-          loanName: loan.name,
-          id: cf.id,
-          date: cf.date,
-          type: cf.type,
-          montant: cf.amount,
-          estManuel: cf.isManual,
-          description: cf.description || ''
-        }))
-      )
-    };
     
-    return exportData;
-  },
-  
-  // Export au format Excel
-  exportExcel: (data: any, filename: string) => {
-    try {
-      // Utilisation de la bibliothèque XLSX
-      const XLSX = require('xlsx');
-      
-      // Création du classeur
-      const workbook = XLSX.utils.book_new();
-      
-      // Création des feuilles
-      
-      // 1. Feuille d'informations du portfolio
-      const portfolioSheet = XLSX.utils.json_to_sheet([data.portfolioInfo]);
-      XLSX.utils.book_append_sheet(workbook, portfolioSheet, "Informations Portfolio");
-      
-      // 2. Feuille des prêts
-      const loansSheet = XLSX.utils.json_to_sheet(data.loans);
-      XLSX.utils.book_append_sheet(workbook, loansSheet, "Prêts");
-      
-      // 3. Feuille des cashflows
-      if (data.cashflows && data.cashflows.length > 0) {
-        const cashflowsSheet = XLSX.utils.json_to_sheet(data.cashflows);
-        XLSX.utils.book_append_sheet(workbook, cashflowsSheet, "Cashflows");
-      }
-      
-      // Écriture du fichier
-      XLSX.writeFile(workbook, filename);
-      
-    } catch (error) {
-      console.error("Erreur lors de l'export Excel:", error);
-      throw error;
+    const reportFormat = report.formats.find(f => f.type === format);
+    if (!reportFormat) {
+      return {
+        success: false,
+        message: "Report format not supported"
+      };
     }
-  },
-  
-  // Export au format CSV
-  exportCSV: (data: any, filename: string) => {
-    try {
-      // Utilisation de Papa Parse pour la conversion en CSV
-      const Papa = require('papaparse');
-      
-      // Conversion des données en CSV
-      const loansCSV = Papa.unparse(data.loans);
-      
-      // Création et téléchargement du fichier
-      const blob = new Blob([loansCSV], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      
-    } catch (error) {
-      console.error("Erreur lors de l'export CSV:", error);
-      throw error;
-    }
+    
+    const content = report.getContent(portfolio);
+    const filename = `${portfolio.name}_${reportType}_${new Date().toISOString().split('T')[0]}${reportFormat.extension}`;
+    
+    return {
+      success: true,
+      content,
+      filename,
+      message: `Report ${filename} generated successfully`
+    };
+  } catch (error) {
+    console.error("Error generating report:", error);
+    return {
+      success: false,
+      message: "An error occurred while generating the report"
+    };
   }
 };
 
-export default ExcelTemplateService;
+// Function to validate CSV format
+export const validateCSVFormat = (csvContent: string, templateType: string): { success: boolean; errors: string[] } => {
+  const errors: string[] = [];
+  const lines = csvContent.split('\n').filter(line => line.trim());
+  
+  if (lines.length < 2) {
+    errors.push("CSV file must contain at least a header and one data row");
+    return { success: false, errors };
+  }
+  
+  const headers = lines[0].split(',').map(h => h.trim());
+  
+  switch (templateType) {
+    case 'loans':
+      const requiredLoanHeaders = [
+        'ID', 'Name', 'Client', 'Type', 'Status', 'Start Date', 'End Date',
+        'Currency', 'Original Amount', 'Outstanding', 'Drawn Amount', 'Undrawn Amount',
+        'PD', 'LGD', 'EAD', 'Margin', 'Reference Rate', 'Internal Rating',
+        'Sector', 'Country', 'Upfront Fees', 'Commitment Fees', 'Agency Fees', 'Other Fees'
+      ];
+      
+      requiredLoanHeaders.forEach(required => {
+        if (!headers.includes(required)) {
+          errors.push(`Missing required column: ${required}`);
+        }
+      });
+      break;
+      
+    case 'cashflows':
+      const requiredCashflowHeaders = ['ID', 'Date', 'Type', 'Amount', 'Manual', 'Description'];
+      requiredCashflowHeaders.forEach(required => {
+        if (!headers.includes(required)) {
+          errors.push(`Missing required column: ${required}`);
+        }
+      });
+      break;
+      
+    case 'parameters':
+      const requiredParamHeaders = ['Parameter', 'Value'];
+      requiredParamHeaders.forEach(required => {
+        if (!headers.includes(required)) {
+          errors.push(`Missing required column: ${required}`);
+        }
+      });
+      break;
+  }
+  
+  return {
+    success: errors.length === 0,
+    errors
+  };
+};
+
+// Export service class
+export default class ExcelTemplateService {
+  static downloadTemplate = downloadExcelTemplate;
+  static generateDocumentation = generateTemplateDocumentation;
+  static generateReport = generateReport;
+  static validateCSV = validateCSVFormat;
+}
