@@ -99,8 +99,6 @@ const LoansList = () => {
   // Dialog states
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [loanToDelete, setLoanToDelete] = useState<string | null>(null);
-  const [addLoanDialogOpen, setAddLoanDialogOpen] = useState(false);
-  const [newLoanPortfolioId, setNewLoanPortfolioId] = useState<string>('');
 
   useEffect(() => {
     loadPortfolios();
@@ -345,21 +343,7 @@ const LoansList = () => {
     setLoanToDelete(null);
   };
 
-  const handleAddLoanWithPortfolio = () => {
-    if (!newLoanPortfolioId) {
-      toast({
-        title: "Error",
-        description: "Please select a portfolio for the new loan.",
-        variant: "destructive"
-      });
-      return;
-    }
-    
-    // Navigate to new loan page with portfolio pre-selected
-    navigate(`/loans/new?portfolio=${newLoanPortfolioId}`);
-    setAddLoanDialogOpen(false);
-    setNewLoanPortfolioId('');
-  };
+
 
   const selectedPortfolio = portfolios.find(p => p.id === selectedPortfolioId);
   const getClientTypeLabel = (clientType?: ClientType) => {
@@ -387,57 +371,10 @@ const LoansList = () => {
             <Download className="h-4 w-4 mr-2" />
             Export
           </Button>
-          <Dialog open={addLoanDialogOpen} onOpenChange={setAddLoanDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>
+          <Button onClick={() => navigate('/loans/new')}>
             <Plus className="h-4 w-4 mr-2" />
-                New Loan
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add New Loan</DialogTitle>
-                <DialogDescription>
-                  Select a portfolio for the new loan.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="loan-portfolio">Target Portfolio</Label>
-                  <Select value={newLoanPortfolioId} onValueChange={setNewLoanPortfolioId}>
-                    <SelectTrigger id="loan-portfolio">
-                      <SelectValue placeholder="Select a portfolio" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {portfolios.map(portfolio => (
-                        <SelectItem key={portfolio.id} value={portfolio.id}>
-                          <div className="flex items-center justify-between w-full">
-                            <span>{portfolio.name}</span>
-                            <div className="flex items-center gap-2 ml-2">
-                              <Badge variant="secondary" className="text-xs">
-                                {portfolio.loanCount} loans
-                              </Badge>
-                              {portfolio.isDefault && (
-                                <Badge variant="outline" className="text-xs">Default</Badge>
-                              )}
-                            </div>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setAddLoanDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={handleAddLoanWithPortfolio}>
-                  Continue
+            New Loan
           </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
         </div>
       </div>
       
@@ -613,7 +550,7 @@ const LoansList = () => {
                             ? 'No loans match your search criteria.' 
                             : 'This portfolio is empty. Add some loans to get started.'}
                         </p>
-                        <Button onClick={() => setAddLoanDialogOpen(true)}>
+                        <Button onClick={() => navigate('/loans/new')}>
                       <Plus className="h-4 w-4 mr-2" />
                           Add First Loan
                     </Button>

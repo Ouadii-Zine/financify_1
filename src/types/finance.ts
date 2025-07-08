@@ -3,6 +3,48 @@ export type LoanType = 'term' | 'revolver' | 'bullet' | 'amortizing';
 export type Currency = 'EUR' | 'USD' | 'GBP' | 'CHF' | 'JPY';
 export type ClientType = 'banqueCommerciale' | 'banqueInvestissement' | 'assurance' | 'fonds' | 'entreprise';
 
+// S&P Rating System
+export type SPRating = 
+  | 'AAA' | 'AA+' | 'AA' | 'AA-' 
+  | 'A+' | 'A' | 'A-' 
+  | 'BBB+' | 'BBB' | 'BBB-' 
+  | 'BB+' | 'BB' | 'BB-' 
+  | 'B+' | 'B' | 'B-' 
+  | 'CCC+' | 'CCC' | 'CCC-' 
+  | 'CC' | 'C' | 'D';
+
+export interface RatingMapping {
+  rating: SPRating;
+  pd: number; // Probability of Default in decimal
+  riskWeight: number; // Risk weight for RWA calculation
+}
+
+// Standard S&P rating mappings
+export const S_P_RATING_MAPPINGS: RatingMapping[] = [
+  { rating: 'AAA', pd: 0.0001, riskWeight: 0.20 },
+  { rating: 'AA+', pd: 0.0002, riskWeight: 0.20 },
+  { rating: 'AA', pd: 0.0003, riskWeight: 0.20 },
+  { rating: 'AA-', pd: 0.0005, riskWeight: 0.20 },
+  { rating: 'A+', pd: 0.0008, riskWeight: 0.50 },
+  { rating: 'A', pd: 0.0012, riskWeight: 0.50 },
+  { rating: 'A-', pd: 0.0018, riskWeight: 0.50 },
+  { rating: 'BBB+', pd: 0.0025, riskWeight: 1.00 },
+  { rating: 'BBB', pd: 0.0035, riskWeight: 1.00 },
+  { rating: 'BBB-', pd: 0.0050, riskWeight: 1.00 },
+  { rating: 'BB+', pd: 0.0075, riskWeight: 1.50 },
+  { rating: 'BB', pd: 0.0125, riskWeight: 1.50 },
+  { rating: 'BB-', pd: 0.0200, riskWeight: 1.50 },
+  { rating: 'B+', pd: 0.0350, riskWeight: 2.00 },
+  { rating: 'B', pd: 0.0600, riskWeight: 2.00 },
+  { rating: 'B-', pd: 0.1000, riskWeight: 2.00 },
+  { rating: 'CCC+', pd: 0.1500, riskWeight: 2.50 },
+  { rating: 'CCC', pd: 0.2500, riskWeight: 2.50 },
+  { rating: 'CCC-', pd: 0.4000, riskWeight: 2.50 },
+  { rating: 'CC', pd: 0.6000, riskWeight: 3.00 },
+  { rating: 'C', pd: 0.8000, riskWeight: 3.00 },
+  { rating: 'D', pd: 1.0000, riskWeight: 3.00 }
+];
+
 export interface Loan {
   id: string;
   name: string;
@@ -29,7 +71,7 @@ export interface Loan {
   };
   margin: number; // Spread over reference rate (%)
   referenceRate: number; // Base rate (%)
-  internalRating: string;
+  internalRating: SPRating;
   sector: string;
   country: string;
   cashFlows: CashFlow[];

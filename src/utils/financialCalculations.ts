@@ -1,23 +1,30 @@
+import { Loan, LoanMetrics, PortfolioMetrics, CalculationParameters, S_P_RATING_MAPPINGS, RatingMapping } from '../types/finance';
 
-import { Loan, LoanMetrics, PortfolioMetrics, CalculationParameters } from '../types/finance';
+// Helper function to get rating mapping
+export const getRatingMapping = (rating: string): RatingMapping => {
+  const mapping = S_P_RATING_MAPPINGS.find(r => r.rating === rating);
+  if (!mapping) {
+    // Default to BB- if rating not found
+    return S_P_RATING_MAPPINGS.find(r => r.rating === 'BB-')!;
+  }
+  return mapping;
+};
 
 // Calcul de l'Expected Loss (EL)
 export const calculateExpectedLoss = (loan: Loan): number => {
   return loan.pd * loan.lgd * loan.ead;
 };
 
-// Calcul des Risk-Weighted Assets (RWA)
+// Calcul des Risk-Weighted Assets (RWA) using S&P ratings
 export const calculateRWA = (loan: Loan, params: CalculationParameters): number => {
-  // Formule simplifiée pour RWA selon l'approche IRB
-  const maturityAdjustment = 1 + (2.5 * ((loan.endDate ? new Date(loan.endDate).getTime() : 0) - 
-                             (new Date().getTime())) / (365 * 24 * 60 * 60 * 1000));
-  const correlationFactor = 0.12 * (1 - Math.exp(-50 * loan.pd)) / (1 - Math.exp(-50)) +
-                           0.24 * (1 - (1 - Math.exp(-50 * loan.pd)) / (1 - Math.exp(-50)));
+  const ratingMapping = getRatingMapping(loan.internalRating);
   
-  const k = (1 - correlationFactor) * loan.lgd * loan.pd +
-           correlationFactor * loan.lgd * 1.06 * Math.sqrt(1.5); // 1.06 est un facteur de confiance à 99.9%
+  // Use the risk weight from S&P rating mapping
+  const riskWeight = ratingMapping.riskWeight;
   
-  return loan.ead * k * maturityAdjustment * 12.5 * params.capitalRatio;
+  // Calculate RWA using the standard formula: RWA = EAD × Risk Weight × 100%
+  // Risk weight is already in percentage terms (e.g., 1.5 for BB+)
+  return loan.ead * riskWeight;
 };
 
 // Calcul du Return on Equity (ROE)

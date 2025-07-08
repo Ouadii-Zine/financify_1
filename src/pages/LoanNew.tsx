@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Loan, LoanType, LoanStatus, Currency, ClientType, PortfolioSummary } from '@/types/finance';
+import { Loan, LoanType, LoanStatus, Currency, ClientType, PortfolioSummary, SPRating, S_P_RATING_MAPPINGS } from '@/types/finance';
 import LoanDataService from '@/services/LoanDataService';
 
 import PortfolioService, { PORTFOLIOS_UPDATED_EVENT } from '@/services/PortfolioService';
@@ -34,7 +34,7 @@ interface LoanFormData {
   ead?: string;
   sector: string;
   country: string;
-  internalRating: string;
+  internalRating: SPRating;
   margin: string;
   referenceRate: string;
   upfrontFee?: string;
@@ -75,12 +75,12 @@ const LoanNew = () => {
     outstandingAmount: '',
     drawnAmount: '',
     undrawnAmount: '0',
-    pd: '1',
+    pd: '0.75', // Default PD for BB+ rating
     lgd: '45',
     ead: '',
     sector: 'Technology',
     country: 'France',
-    internalRating: 'BB',
+    internalRating: 'BB+',
     margin: '2',
     referenceRate: '3',
     upfrontFee: '0',
@@ -185,7 +185,21 @@ const LoanNew = () => {
   };
 
   const handleSelectChange = (name: string, value: string) => {
+    if (name === 'internalRating') {
+      // Get the PD from S&P rating mapping
+      const ratingMapping = S_P_RATING_MAPPINGS.find(r => r.rating === value);
+      if (ratingMapping) {
+        setFormData(prev => ({ 
+          ...prev, 
+          [name]: value as SPRating,
+          pd: (ratingMapping.pd * 100).toString() // Convert to percentage
+        }));
+      } else {
+        setFormData(prev => ({ ...prev, [name]: value as SPRating }));
+      }
+    } else {
     setFormData(prev => ({ ...prev, [name]: value }));
+    }
   };
 
 
@@ -211,12 +225,12 @@ const LoanNew = () => {
         endDate: formData.endDate,
         currency: formData.currency as Currency,
         originalAmount: parseFloat(formData.originalAmount.toString()),
-        outstandingAmount: parseFloat(formData.outstandingAmount?.toString() || formData.originalAmount.toString()),
-        drawnAmount: parseFloat(formData.drawnAmount?.toString() || formData.originalAmount.toString()),
-        undrawnAmount: parseFloat(formData.undrawnAmount?.toString() || '0'),
+        outstandingAmount: parseFloat(formData.originalAmount.toString()), // Always equal to original amount for new/edited loans
+        drawnAmount: parseFloat(formData.originalAmount.toString()), // Default to fully drawn
+        undrawnAmount: 0, // Default to no undrawn amount
         pd: parseFloat(formData.pd.toString()) / 100, // Convertir en décimal
         lgd: parseFloat(formData.lgd.toString()) / 100, // Convertir en décimal
-        ead: parseFloat(formData.ead?.toString() || formData.drawnAmount?.toString() || formData.originalAmount.toString()),
+        ead: parseFloat(formData.originalAmount.toString()), // EAD equals the original amount
         fees: {
           upfront: parseFloat(formData.upfrontFee?.toString() || '0'),
           commitment: parseFloat(formData.commitmentFee?.toString() || '0'),
@@ -244,17 +258,20 @@ const LoanNew = () => {
       };
       
       if (isEditMode && formData.id) {
-        // Edit mode: update existing loan
-        const success = loanDataService.updateLoan(formData.id, preparedLoan, defaultCalculationParameters);
+        // Edit mode: delete old loan and create new one (to ensure proper recalculation)
+        const deleteSuccess = loanDataService.deleteLoan(formData.id);
         
-        if (success) {
+        if (deleteSuccess) {
+          // Create the new loan with the same ID but fresh calculations
+          loanDataService.addLoan(preparedLoan, formData.portfolioId, defaultCalculationParameters);
+          
           toast({
             title: "Loan updated",
-            description: `The loan "${preparedLoan.name}" has been successfully updated.`,
+            description: `The loan "${preparedLoan.name}" has been successfully updated with fresh calculations.`,
             variant: "default"
           });
         } else {
-          throw new Error("Failed to update loan.");
+          throw new Error("Failed to update loan - could not remove old version.");
         }
       } else {
         // Creation mode: add new loan
@@ -501,14 +518,39 @@ const LoanNew = () => {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="internalRating">Internal Rating</Label>
-                <Input 
-                  id="internalRating" 
-                  name="internalRating" 
+                <Label htmlFor="internalRating">Internal Rating (S&P)</Label>
+                <Select 
                   value={formData.internalRating} 
-                  onChange={handleInputChange} 
-                  placeholder="BB+" 
-                />
+                  onValueChange={(value) => handleSelectChange('internalRating', value)}
+                >
+                  <SelectTrigger id="internalRating">
+                    <SelectValue placeholder="Select S&P rating" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="AAA">AAA</SelectItem>
+                    <SelectItem value="AA+">AA+</SelectItem>
+                    <SelectItem value="AA">AA</SelectItem>
+                    <SelectItem value="AA-">AA-</SelectItem>
+                    <SelectItem value="A+">A+</SelectItem>
+                    <SelectItem value="A">A</SelectItem>
+                    <SelectItem value="A-">A-</SelectItem>
+                    <SelectItem value="BBB+">BBB+</SelectItem>
+                    <SelectItem value="BBB">BBB</SelectItem>
+                    <SelectItem value="BBB-">BBB-</SelectItem>
+                    <SelectItem value="BB+">BB+</SelectItem>
+                    <SelectItem value="BB">BB</SelectItem>
+                    <SelectItem value="BB-">BB-</SelectItem>
+                    <SelectItem value="B+">B+</SelectItem>
+                    <SelectItem value="B">B</SelectItem>
+                    <SelectItem value="B-">B-</SelectItem>
+                    <SelectItem value="CCC+">CCC+</SelectItem>
+                    <SelectItem value="CCC">CCC</SelectItem>
+                    <SelectItem value="CCC-">CCC-</SelectItem>
+                    <SelectItem value="CC">CC</SelectItem>
+                    <SelectItem value="C">C</SelectItem>
+                    <SelectItem value="D">D</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               
               <div className="space-y-2">
