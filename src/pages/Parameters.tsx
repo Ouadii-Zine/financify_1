@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -8,6 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { 
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { 
   Table, 
   TableBody, 
   TableCell, 
@@ -15,9 +21,18 @@ import {
   TableHeader, 
   TableRow 
 } from '@/components/ui/table';
+import { 
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { toast } from '@/hooks/use-toast';
 import { defaultCalculationParameters } from '@/data/sampleData';
-import { PlusCircle, Save, Trash2 } from 'lucide-react';
+import { RatingType, InternalRating, SPRating, MoodysRating, FitchRating, CalculationParameters, TransitionMatrix } from '@/types/finance';
+import { PlusCircle, Save, Trash2, Download, Upload, RotateCcw, Info, ChevronDown, ChevronRight } from 'lucide-react';
+import ParameterService from '@/services/ParameterService';
+import LoanDataService from '@/services/LoanDataService';
+import CurrencyService, { ExchangeRate } from '@/services/CurrencyService';
 
 // Liste des pays extraite du fichier Excel "Country of Operation" - traduite en anglais
 const COUNTRIES = [
@@ -203,32 +218,132 @@ const COUNTRY_MAPPING: Record<string, {zone: string, group: string, europeNa: st
 };
 
 // Extend the default parameters type to include priceFactor and spread
-interface CalculationParameters {
-  targetROE: number;
-  corporateTaxRate: number;
-  capitalRatio: number;
-  fundingCost: number;
-  operationalCostRatio: number;
-  pdCurve: { rating: string; pd: number; }[];
-  lgdAssumptions: { sector: string; lgd: number; }[];
-  stressScenarios: {
-    name: string;
-    pdMultiplier: number;
-    lgdMultiplier: number;
-    rateShift: number;
-    spreadShift: number;
-  }[];
-  priceFactor: number;
-  spread: number;
+
+// TransitionMatrixTable component
+interface TransitionMatrixTableProps {
+  ratingType: RatingType;
+  parameters: CalculationParameters;
+  onTransitionChange: (fromRating: string, toRating: string, probability: number) => void;
 }
 
+const TransitionMatrixTable: React.FC<TransitionMatrixTableProps> = ({ 
+  ratingType, 
+  parameters, 
+  onTransitionChange 
+}) => {
+  const ratings = parameters.ratingPDMappings[ratingType]?.map(r => r.rating) || [];
+  const transitions = parameters.transitionMatrices[ratingType] || [];
+  
+  const getTransitionProbability = (from: string, to: string): number => {
+    const transition = transitions.find(t => t.from === from && t.to === to);
+    return transition ? transition.probability : 0;
+  };
+
+  const calculateRowSum = (fromRating: string): number => {
+    return ratings.reduce((sum, toRating) => {
+      return sum + getTransitionProbability(fromRating, toRating);
+    }, 0);
+  };
+
+  if (ratings.length === 0) return <div>No ratings available for this type</div>;
+
+  return (
+    <div className="w-full">
+      <div className="border rounded-lg max-h-96 overflow-auto">
+        <Table className="text-xs relative">
+          <TableHeader className="sticky top-0 bg-background z-10">
+            <TableRow>
+              <TableHead className="sticky left-0 bg-background z-20 w-16 border-r">
+                <div className="text-center">From \\ To</div>
+              </TableHead>
+              {ratings.map(rating => (
+                <TableHead key={rating} className="text-center min-w-20 px-2 border-r">
+                  {rating}
+                </TableHead>
+              ))}
+              <TableHead className="text-center min-w-20 px-2 bg-muted/50">
+                Row Sum
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {ratings.map(fromRating => {
+              const rowSum = calculateRowSum(fromRating);
+              const isRowSumValid = Math.abs(rowSum - 1.0) < 0.01; // Within 1% of 100%
+              
+              return (
+                <TableRow key={fromRating}>
+                  <TableCell className="sticky left-0 bg-background z-10 font-medium text-xs border-r">
+                    {fromRating}
+                  </TableCell>
+                  {ratings.map(toRating => {
+                    const probability = getTransitionProbability(fromRating, toRating);
+                    const isMainDiagonal = fromRating === toRating;
+                    
+                    return (
+                      <TableCell key={toRating} className="text-center p-1 border-r">
+                        <Input
+                          type="number"
+                          value={(probability * 100).toFixed(2)}
+                          onChange={(e) => {
+                            const newValue = parseFloat(e.target.value) / 100;
+                            if (!isNaN(newValue) && newValue >= 0 && newValue <= 1) {
+                              onTransitionChange(fromRating, toRating, newValue);
+                            }
+                          }}
+                          className={`w-18 h-8 text-xs text-center border-0 ${
+                            isMainDiagonal 
+                              ? 'bg-blue-50 focus:bg-blue-100' 
+                              : 'bg-transparent focus:bg-white'
+                          }`}
+                          step="0.01"
+                          min="0"
+                          max="100"
+                        />
+                      </TableCell>
+                    );
+                  })}
+                  <TableCell className={`text-center p-2 font-mono text-xs ${
+                    isRowSumValid ? 'text-green-600' : 'text-red-600'
+                  } bg-muted/50`}>
+                    {(rowSum * 100).toFixed(1)}%
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
+      <div className="text-xs text-muted-foreground mt-2 space-y-1">
+        <p>* Values are shown as percentages. Each row should sum to 100%.</p>
+        <p>* Diagonal elements (same rating) are highlighted in blue and typically have the highest probabilities.</p>
+        <p>* Row sums are shown in green when close to 100%, red when significantly different.</p>
+      </div>
+    </div>
+  );
+};
+
 const Parameters = () => {
-  // Initialize with default parameters and add the missing properties
-  const [parameters, setParameters] = useState<CalculationParameters>({
-    ...defaultCalculationParameters,
-    priceFactor: 1.5,
-    spread: 0.2
+  // Initialize with parameters from service
+  const [parameters, setParameters] = useState<CalculationParameters>(() => {
+    const loaded = ParameterService.loadParameters();
+    return {
+      ...loaded,
+      priceFactor: loaded.priceFactor || 1.5,
+      spread: loaded.spread || 0.2
+    };
   });
+  
+  // State for managing which rating type is being edited
+  const [selectedRatingType, setSelectedRatingType] = useState<RatingType>('sp');
+  
+  // State for saving/loading operations
+  const [isSaving, setIsSaving] = useState(false);
+  const [totalLoans, setTotalLoans] = useState(0);
+  
+  // State for collapsible sections
+  const [isPDSectionOpen, setIsPDSectionOpen] = useState(false);
+  const [isTransitionMatrixOpen, setIsTransitionMatrixOpen] = useState(true);
   
   // État pour la sélection des pays
   const [selectedCountry, setSelectedCountry] = useState<string>("FRANCE");
@@ -237,6 +352,14 @@ const Parameters = () => {
   // État pour la sélection des méthodes de calcul d'intérêts
   const [selectedInterestMethod, setSelectedInterestMethod] = useState<string>("n/a");
   const [interestMethodInfo, setInterestMethodInfo] = useState(INTEREST_METHOD_MAPPING["n/a"] || {finalMethod: "", description: "", type: ""});
+  
+  // État pour la sélection des devises
+  const [selectedCurrency, setSelectedCurrency] = useState<string>("USD");
+  const [exchangeRates, setExchangeRates] = useState<ExchangeRate[]>([]);
+  const [currencyInfo, setCurrencyInfo] = useState<ExchangeRate>({currency: "USD", rate: 1});
+  const [isLoadingRates, setIsLoadingRates] = useState<boolean>(false);
+  
+  const currencyService = CurrencyService.getInstance();
   
   // Update country info when country changes
   useEffect(() => {
@@ -256,32 +379,217 @@ const Parameters = () => {
     }
   }, [selectedInterestMethod]);
   
-  const handleSaveParameters = () => {
+  // Fetch exchange rates on component mount
+  useEffect(() => {
+    const fetchRates = async () => {
+      setIsLoadingRates(true);
+      try {
+        const rates = await currencyService.fetchLiveRates();
+        setExchangeRates(rates);
+        
+        // Load saved currency from parameters or set USD as default (matches API base)
+        const savedCurrency = parameters.currency || 'USD';
+        setSelectedCurrency(savedCurrency);
+        
+        const selectedRate = rates.find(rate => rate.currency === savedCurrency);
+        if (selectedRate) {
+          setCurrencyInfo(selectedRate);
+        }
+      } catch (error) {
+        console.error('Failed to fetch exchange rates:', error);
+      } finally {
+        setIsLoadingRates(false);
+      }
+    };
+    
+    fetchRates();
+  }, [currencyService, parameters.currency]);
+  
+  // Update currency info when selected currency changes
+  useEffect(() => {
+    if (selectedCurrency && exchangeRates.length > 0) {
+      const selectedRate = exchangeRates.find(rate => rate.currency === selectedCurrency);
+      if (selectedRate) {
+        setCurrencyInfo(selectedRate);
+      }
+    }
+  }, [selectedCurrency, exchangeRates]);
+  
+  // Count total loans for display
+  useEffect(() => {
+    try {
+      const loanDataService = LoanDataService.getInstance();
+      const allLoans = loanDataService.getAllLoans(false); // Exclude samples
+      setTotalLoans(allLoans.length);
+    } catch (error) {
+      console.error('Error counting loans:', error);
+    }
+  }, []);
+  
+  const handleSaveParameters = async () => {
+    setIsSaving(true);
+    
+    try {
+      // Update parameters with selected currency and exchange rate
+      const updatedParameters = {
+        ...parameters,
+        currency: selectedCurrency as any, // Cast to Currency type
+        exchangeRate: currencyInfo?.rate || 1.0
+      };
+      
+      // Save parameters to localStorage
+      ParameterService.saveParameters(updatedParameters);
+      
+      // Get the loan data service instance and update all loan calculations
+      const loanDataService = LoanDataService.getInstance();
+      
+      // Show initial toast
     toast({
-      title: "Parameters Saved",
-      description: "Parameters have been successfully updated.",
+        title: "Saving Parameters...",
+        description: "Updating all loan calculations and currency settings.",
       variant: "default"
     });
+      
+      // Update calculations (this might take a moment)
+      await new Promise(resolve => {
+        loanDataService.updateCalculationParams(updatedParameters);
+        // Give it a moment to process
+        setTimeout(resolve, 100);
+      });
+      
+      // Emit event to notify other components that parameters were updated
+      window.dispatchEvent(new CustomEvent('parameters-updated'));
+      
+      toast({
+        title: "Parameters Saved & Applied",
+        description: `Parameters saved successfully. Currency set to ${selectedCurrency}. All loans have been recalculated.`,
+        variant: "default"
+      });
+    } catch (error) {
+      console.error('Error saving parameters:', error);
+      toast({
+        title: "Save Failed",
+        description: "Failed to save parameters or update loan calculations. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
   
   const handleResetToDefault = () => {
-    setParameters({
-      ...defaultCalculationParameters,
+    const resetParams = ParameterService.resetToDefaults();
+    const updatedParams = {
+      ...resetParams,
       priceFactor: 1.5,
       spread: 0.2
-    });
+    };
+    
+    setParameters(updatedParams);
     setSelectedCountry("FRANCE");
     setSelectedInterestMethod("n/a");
+    
+    // Fix transition matrices to generate complete data
+    try {
+      ParameterService.fixTransitionMatrices();
+      const paramsWithMatrices = ParameterService.loadParameters();
+      setParameters({
+        ...paramsWithMatrices,
+        priceFactor: 1.5,
+        spread: 0.2
+      });
+    } catch (error) {
+      console.error('Failed to fix transition matrices:', error);
+    }
+    
+    // Update all loan calculations with reset parameters
+    const loanDataService = LoanDataService.getInstance();
+    loanDataService.updateCalculationParams(updatedParams);
+    
     toast({
-      title: "Paramètres Réinitialisés",
-      description: "Les paramètres ont été restaurés aux valeurs par défaut.",
+      title: "Parameters Reset & Applied",
+      description: "All parameters restored to defaults, transition matrices loaded from fixed data files, and loan calculations updated.",
       variant: "default"
     });
   };
+
+  const handleExportParameters = () => {
+    try {
+      const jsonString = ParameterService.exportParameters(parameters);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'calculation-parameters.json';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      toast({
+        title: "Parameters Exported",
+        description: "Parameters have been exported to JSON file.",
+        variant: "default"
+      });
+    } catch (error) {
+      toast({
+        title: "Export Failed",
+        description: "Failed to export parameters.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleImportParameters = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const content = e.target?.result as string;
+            const importedParams = ParameterService.importParameters(content);
+            const updatedParams = {
+              ...importedParams,
+              priceFactor: importedParams.priceFactor || 1.5,
+              spread: importedParams.spread || 0.2
+            };
+            
+            setParameters(updatedParams);
+            
+            // Update all loan calculations with imported parameters
+            const loanDataService = LoanDataService.getInstance();
+            loanDataService.updateCalculationParams(updatedParams);
+            
+            toast({
+              title: "Parameters Imported & Applied",
+              description: "Parameters have been successfully imported and all loan calculations updated.",
+              variant: "default"
+            });
+          } catch (error) {
+            toast({
+              title: "Import Failed",
+              description: "Invalid parameter file format.",
+              variant: "destructive"
+            });
+          }
+        };
+        reader.readAsText(file);
+      }
+    };
+    input.click();
+  };
+
+
   
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Calculation Parameters</h1>
+      
+
       
       <Tabs defaultValue="general">
         <TabsList>
@@ -450,72 +758,160 @@ const Parameters = () => {
                 </div>
               </div>
               
-              <h3 className="text-lg font-medium mt-4">PD by Rating</h3>
+              {/* Rating System PD Configuration */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Label>Rating Type:</Label>
+                    <Select value={selectedRatingType} onValueChange={(value: RatingType) => setSelectedRatingType(value)}>
+                      <SelectTrigger className="w-40">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="internal">Internal Rating</SelectItem>
+                        <SelectItem value="sp">S&P Rating</SelectItem>
+                        <SelectItem value="moodys">Moody's Rating</SelectItem>
+                        <SelectItem value="fitch">Fitch Rating</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                
+                <Collapsible open={isPDSectionOpen} onOpenChange={setIsPDSectionOpen}>
+                  <CollapsibleTrigger asChild>
+                    <Button variant="ghost" className="flex items-center justify-between w-full p-4 hover:bg-muted/50">
+                      <h3 className="text-lg font-medium">Rating System PD Configuration</h3>
+                      {isPDSectionOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-4">
+                    <div className="p-4 border rounded-lg bg-muted/50">
+                      <p className="text-sm text-muted-foreground mb-4">
+                        Configure PD values for each {selectedRatingType === 'internal' ? 'Internal' : selectedRatingType === 'sp' ? 'S&P' : selectedRatingType === 'moodys' ? "Moody's" : 'Fitch'} rating. 
+                        These values will be used for automatic PD calculation when loans use this rating type.
+                        <strong className="block mt-2 text-blue-700">
+                          When you save parameters, all existing loans with {selectedRatingType === 'internal' ? 'Internal' : selectedRatingType === 'sp' ? 'S&P' : selectedRatingType === 'moodys' ? "Moody's" : 'Fitch'} ratings 
+                          will have their PD values automatically updated.
+                        </strong>
+                      </p>
+                      
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Rating</TableHead>
-                    <TableHead className="text-right">PD</TableHead>
-                    <TableHead>Actions</TableHead>
+                            <TableHead className="text-right">PD (%)</TableHead>
+                            <TableHead className="text-center">Adjustment</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {parameters.pdCurve.map((rating, index) => (
+                          {parameters.ratingPDMappings[selectedRatingType]?.map((rating, index) => (
                     <TableRow key={index}>
-                      <TableCell>
-                        <Input 
-                          value={rating.rating} 
-                          onChange={(e) => {
-                            const newPdCurve = [...parameters.pdCurve];
-                            newPdCurve[index].rating = e.target.value;
-                            setParameters({...parameters, pdCurve: newPdCurve});
-                          }}
-                        />
+                              <TableCell className="font-medium">
+                                {rating.rating}
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex items-center justify-end space-x-2">
+                                <span className="font-mono">
+                                  {(rating.pd * 100).toFixed(4)}%
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center justify-center space-x-2">
                           <Slider 
                             min={0.0001} 
-                            max={0.3} 
+                                    max={1.0} 
                             step={0.0001} 
                             value={[rating.pd]} 
                             onValueChange={(values) => {
-                              const newPdCurve = [...parameters.pdCurve];
-                              newPdCurve[index].pd = values[0];
-                              setParameters({...parameters, pdCurve: newPdCurve});
+                                      const newMappings = { ...parameters.ratingPDMappings };
+                                      newMappings[selectedRatingType][index].pd = values[0];
+                                      setParameters({
+                                        ...parameters, 
+                                        ratingPDMappings: newMappings
+                                      });
                             }} 
                             className="w-32"
                           />
-                          <span className="w-16 text-right font-mono">
-                            {typeof rating.pd === 'number' ? (rating.pd * 100).toFixed(2) + '%' : '0.00%'}
-                          </span>
+                                  <Input
+                                    type="number"
+                                    value={(rating.pd * 100).toFixed(4)}
+                                    onChange={(e) => {
+                                      const newPD = parseFloat(e.target.value) / 100;
+                                      if (!isNaN(newPD) && newPD >= 0 && newPD <= 1) {
+                                        const newMappings = { ...parameters.ratingPDMappings };
+                                        newMappings[selectedRatingType][index].pd = newPD;
+                                        setParameters({
+                                          ...parameters, 
+                                          ratingPDMappings: newMappings
+                                        });
+                                      }
+                                    }}
+                                    className="w-20 text-center text-xs"
+                                    step="0.0001"
+                                    min="0"
+                                    max="100"
+                                  />
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <Button 
-                          variant="ghost" 
-                          size="sm"
-                          onClick={() => {
-                            const newPdCurve = parameters.pdCurve.filter((_, i) => i !== index);
-                            setParameters({...parameters, pdCurve: newPdCurve});
-                          }}
-                        >
-                          Remove
-                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
-              
-              <Button 
-                onClick={() => {
-                  const newPdCurve = [...parameters.pdCurve, { rating: 'New Rating', pd: 0.01 }];
-                  setParameters({...parameters, pdCurve: newPdCurve});
-                }}
-              >
-                Add Rating
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+                
+                {/* Transition Matrix Section */}
+                <Collapsible open={isTransitionMatrixOpen} onOpenChange={setIsTransitionMatrixOpen}>
+                  <CollapsibleTrigger asChild>
+                    <Button variant="ghost" className="flex items-center justify-between w-full p-4 hover:bg-muted/50">
+                      <h3 className="text-lg font-medium">
+                        {selectedRatingType === 'internal' ? 'Internal' : 
+                         selectedRatingType === 'sp' ? 'S&P' : 
+                         selectedRatingType === 'moodys' ? "Moody's" : 'Fitch'} Rating Transition Matrix
+                      </h3>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">One-year transition probabilities</span>
+                        {isTransitionMatrixOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                      </div>
               </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-4">
+                    <div className="p-4 border rounded-lg bg-muted/50">
+                      <p className="text-sm text-muted-foreground mb-4">
+                        Configure one-year transition probabilities between ratings. Values represent the probability 
+                        that a rating will migrate to another rating within one year. Each row should sum to 100%.
+                      </p>
+                      
+                      <TransitionMatrixTable 
+                        ratingType={selectedRatingType}
+                        parameters={parameters}
+                        onTransitionChange={(fromRating, toRating, probability) => {
+                          const updatedTransitions = [...parameters.transitionMatrices[selectedRatingType]];
+                          const transitionIndex = updatedTransitions.findIndex(
+                            t => t.from === fromRating && t.to === toRating
+                          );
+                          
+                          if (transitionIndex !== -1) {
+                            updatedTransitions[transitionIndex].probability = probability;
+                          } else {
+                            updatedTransitions.push({ from: fromRating, to: toRating, probability });
+                          }
+                          
+                          setParameters({
+                            ...parameters,
+                            transitionMatrices: {
+                              ...parameters.transitionMatrices,
+                              [selectedRatingType]: updatedTransitions
+                            }
+                          });
+                        }}
+                      />
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              </div>
+              
+
             </CardContent>
           </Card>
         </TabsContent>
@@ -714,6 +1110,81 @@ const Parameters = () => {
             </CardContent>
           </Card>
           
+          {/* Currency Selection Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Currency Setup</CardTitle>
+              <CardDescription>
+                Select the default currency for operations and view its exchange rate relative to USD.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-end">
+                  {/* Currency Selection */}
+                  <div className="space-y-2">
+                    <Label htmlFor="defaultCurrency">Currency</Label>
+                    <select 
+                      id="defaultCurrency"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      value={selectedCurrency}
+                      onChange={(e) => setSelectedCurrency(e.target.value)}
+                    >
+                      <option value="">-- Select a currency --</option>
+                      {exchangeRates.map((rate) => (
+                        <option key={rate.currency} value={rate.currency}>
+                          {rate.currency}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  {/* Exchange Rate */}
+                  <div className="space-y-2">
+                    <Label>Exchange Rate (1 USD =)</Label>
+                    <div className="flex h-10 w-full rounded-md border border-input bg-muted px-3 py-2 text-sm items-center">
+                      {currencyInfo.rate ? (
+                        <span className="font-medium">
+                          {currencyInfo.rate.toFixed(4)} {selectedCurrency}
+                        </span>
+                      ) : '-'}
+                    </div>
+                  </div>
+                  
+                  {/* Currency Code */}
+                  <div className="space-y-2">
+                    <Label>Currency Code</Label>
+                    <div className="flex h-10 w-full rounded-md border border-input bg-muted px-3 py-2 text-sm items-center">
+                      <span className="font-medium text-blue-600">
+                        {selectedCurrency || "-"}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {/* Status */}
+                  <div className="space-y-2">
+                    <Label>Status</Label>
+                    <div className="flex h-10 w-full rounded-md border border-input bg-muted px-3 py-2 text-sm items-center justify-center">
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                        isLoadingRates 
+                          ? 'bg-yellow-100 text-yellow-800' 
+                          : selectedCurrency 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {isLoadingRates ? 'Loading...' : selectedCurrency ? 'Live Rate' : 'Select Currency'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                
+                <p className="text-xs text-muted-foreground">
+                  Select a currency to view its live exchange rate relative to USD.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+          
           {/* Interest Calculation Methods Card */}
           <Card>
             <CardHeader>
@@ -795,13 +1266,28 @@ const Parameters = () => {
         </TabsContent>
       </Tabs>
       
-      <div className="flex justify-end space-x-2">
+      <div className="flex justify-between items-center">
+        <div className="flex space-x-2">
+          <Button variant="outline" onClick={handleExportParameters}>
+            <Download className="h-4 w-4 mr-2" />
+            Export Parameters
+          </Button>
+          <Button variant="outline" onClick={handleImportParameters}>
+            <Upload className="h-4 w-4 mr-2" />
+            Import Parameters
+          </Button>
+        </div>
+        
+        <div className="flex space-x-2">
         <Button variant="outline" onClick={handleResetToDefault}>
-          Restore Default Values
+            <RotateCcw className="h-4 w-4 mr-2" />
+            Reset to Defaults
         </Button>
-        <Button onClick={handleSaveParameters}>
-          Save Parameters
+          <Button onClick={handleSaveParameters} disabled={isSaving}>
+            <Save className="h-4 w-4 mr-2" />
+            {isSaving ? 'Saving & Updating...' : 'Save Parameters'}
         </Button>
+        </div>
       </div>
     </div>
   );

@@ -48,7 +48,7 @@ import {
   Scatter,
   ZAxis
 } from 'recharts';
-import { Portfolio, PortfolioSummary, Loan, ClientType } from '@/types/finance';
+import { Portfolio, PortfolioSummary, Loan, ClientType, Currency } from '@/types/finance';
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -65,6 +65,8 @@ import {
   Eye,
   MoreHorizontal
 } from 'lucide-react';
+import ParameterService from '@/services/ParameterService';
+import { formatCurrency as formatCurrencyUtil, convertCurrency } from '@/utils/currencyUtils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -92,6 +94,41 @@ const Portfolios = () => {
   const [newPortfolioDescription, setNewPortfolioDescription] = useState('');
   const [newPortfolioClientType, setNewPortfolioClientType] = useState<ClientType>('banqueCommerciale');
   
+  // Currency state management
+  const [currentCurrency, setCurrentCurrency] = useState<Currency>('USD');
+  const [currentExchangeRate, setCurrentExchangeRate] = useState<number>(1.0);
+  const [eurToUsdRate, setEurToUsdRate] = useState<number>(1.0968); // EUR to USD rate
+  
+  // Load currency settings from parameters and fetch EUR rate
+  useEffect(() => {
+    const loadCurrencySettings = async () => {
+      const parameters = ParameterService.loadParameters();
+      if (parameters.currency) {
+        setCurrentCurrency(parameters.currency);
+      }
+      if (parameters.exchangeRate) {
+        setCurrentExchangeRate(parameters.exchangeRate);
+      }
+      
+      // Always fetch the EUR rate for conversion calculations
+      try {
+        const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+        if (response.ok) {
+          const data = await response.json();
+          const eurRate = data.rates?.EUR;
+          if (eurRate) {
+            setEurToUsdRate(eurRate);
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to fetch EUR rate, using fallback:', error);
+        setEurToUsdRate(0.9689); // Fallback EUR rate
+      }
+    };
+    
+    loadCurrencySettings();
+  }, []);
+  
   // Get available client types from the service
   const availableClientTypes = clientTemplateService.getClientTypes();
 
@@ -107,11 +144,38 @@ const Portfolios = () => {
     const handlePortfoliosUpdated = () => {
       loadPortfolios();
     };
+
+    // Add event listener for parameter updates (including currency changes)
+    const handleParametersUpdated = async () => {
+      const parameters = ParameterService.loadParameters();
+      if (parameters.currency) {
+        setCurrentCurrency(parameters.currency);
+      }
+      if (parameters.exchangeRate) {
+        setCurrentExchangeRate(parameters.exchangeRate);
+      }
+      
+      // Refresh EUR rate when parameters are updated
+      try {
+        const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+        if (response.ok) {
+          const data = await response.json();
+          const eurRate = data.rates?.EUR;
+          if (eurRate) {
+            setEurToUsdRate(eurRate);
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to fetch EUR rate, using current value');
+      }
+    };
     
     window.addEventListener(PORTFOLIOS_UPDATED_EVENT, handlePortfoliosUpdated);
+    window.addEventListener('parameters-updated', handleParametersUpdated);
     
     return () => {
       window.removeEventListener(PORTFOLIOS_UPDATED_EVENT, handlePortfoliosUpdated);
+      window.removeEventListener('parameters-updated', handleParametersUpdated);
     };
   }, []);
   
@@ -185,15 +249,6 @@ const Portfolios = () => {
       return;
     }
     
-    if (portfolio.loanCount > 0) {
-      toast({
-        title: "Error",
-        description: "Cannot delete portfolio with existing loans. Please move or delete loans first.",
-        variant: "destructive"
-      });
-      return;
-    }
-    
     if (portfolioService.deletePortfolio(portfolioId)) {
       if (selectedPortfolio?.id === portfolioId) {
         const remaining = portfolios.filter(p => p.id !== portfolioId);
@@ -204,21 +259,24 @@ const Portfolios = () => {
         }
       }
       
+      const loanCount = portfolio.loanCount;
+      const successMessage = loanCount > 0 
+        ? `Portfolio deleted successfully. ${loanCount} loan${loanCount > 1 ? 's' : ''} ${loanCount > 1 ? 'were' : 'was'} also removed.`
+        : "Portfolio deleted successfully.";
+      
       toast({
         title: "Success",
-        description: "Portfolio deleted successfully.",
+        description: successMessage,
         variant: "default"
       });
     }
   };
   
-  // Format currency
-  const formatCurrency = (value: number, currency: string = 'EUR') => {
-    return new Intl.NumberFormat('en-US', { 
-      style: 'currency', 
-      currency: currency, 
-      maximumFractionDigits: 0 
-    }).format(value);
+  // Format currency with dynamic conversion
+  const formatCurrency = (value: number) => {
+    // Convert from EUR to selected currency if needed
+    const convertedValue = convertCurrency(value, currentCurrency, currentExchangeRate, eurToUsdRate);
+    return formatCurrencyUtil(convertedValue, currentCurrency, { maximumFractionDigits: 0 });
   };
   
   // Get client type label
@@ -252,7 +310,27 @@ const Portfolios = () => {
     });
     
     try {
-      ExcelTemplateService.exportData(selectedPortfolio, 'Performance', 'excel');
+      const result = ExcelTemplateService.generateReport('Performance', selectedPortfolio, 'csv');
+      if (result.success && result.content && result.filename) {
+        // Create and download the file
+        const blob = new Blob([result.content], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = result.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        toast({
+          title: "Success",
+          description: "Portfolio exported successfully.",
+          variant: "default"
+        });
+      } else {
+        throw new Error(result.message);
+      }
     } catch (error) {
       console.error("Error exporting portfolio:", error);
       toast({

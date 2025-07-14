@@ -28,9 +28,12 @@ import {
 } from 'recharts';
 import { defaultCalculationParameters } from '@/data/sampleData';
 import { calculatePortfolioMetrics, calculateLoanMetrics } from '@/utils/financialCalculations';
-import { Loan, PortfolioMetrics, Portfolio as PortfolioType, PortfolioSummary } from '@/types/finance';
+import { Loan, PortfolioMetrics, Portfolio as PortfolioType, PortfolioSummary, RatingType, Currency } from '@/types/finance';
+import { getAvailableRatingTypes } from '@/utils/financialCalculations';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import ParameterService from '@/services/ParameterService';
+import { formatCurrency as formatCurrencyUtil, convertCurrency } from '@/utils/currencyUtils';
 import { 
   TrendingDown, 
   AlertTriangle, 
@@ -59,6 +62,8 @@ const Portfolio = () => {
   
   const [portfolios, setPortfolios] = useState<PortfolioSummary[]>([]);
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<string>('');
+  const [selectedRatingType, setSelectedRatingType] = useState<RatingType>('sp');
+  const [availableRatingTypes, setAvailableRatingTypes] = useState<RatingType[]>([]);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [portfolioMetrics, setPortfolioMetrics] = useState<PortfolioMetrics>({
     totalExposure: 0,
@@ -74,6 +79,41 @@ const Portfolio = () => {
     evaSumSale: 0,
     diversificationBenefit: 0
   });
+  
+  // Currency state management
+  const [currentCurrency, setCurrentCurrency] = useState<Currency>('USD');
+  const [currentExchangeRate, setCurrentExchangeRate] = useState<number>(1.0);
+  const [eurToUsdRate, setEurToUsdRate] = useState<number>(1.0968); // EUR to USD rate
+  
+  // Load currency settings from parameters and fetch EUR rate
+  useEffect(() => {
+    const loadCurrencySettings = async () => {
+      const parameters = ParameterService.loadParameters();
+      if (parameters.currency) {
+        setCurrentCurrency(parameters.currency);
+      }
+      if (parameters.exchangeRate) {
+        setCurrentExchangeRate(parameters.exchangeRate);
+      }
+      
+      // Always fetch the EUR rate for conversion calculations
+      try {
+        const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+        if (response.ok) {
+          const data = await response.json();
+          const eurRate = data.rates?.EUR;
+          if (eurRate) {
+            setEurToUsdRate(eurRate);
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to fetch EUR rate, using fallback:', error);
+        setEurToUsdRate(0.9689); // Fallback EUR rate
+      }
+    };
+    
+    loadCurrencySettings();
+  }, []);
   
 
   
@@ -106,14 +146,41 @@ const Portfolio = () => {
         loadLoansForPortfolio(selectedPortfolioId);
       }
     };
+
+    // Add event listener for parameter updates (including currency changes)
+    const handleParametersUpdated = async () => {
+      const parameters = ParameterService.loadParameters();
+      if (parameters.currency) {
+        setCurrentCurrency(parameters.currency);
+      }
+      if (parameters.exchangeRate) {
+        setCurrentExchangeRate(parameters.exchangeRate);
+      }
+      
+      // Refresh EUR rate when parameters are updated
+      try {
+        const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+        if (response.ok) {
+          const data = await response.json();
+          const eurRate = data.rates?.EUR;
+          if (eurRate) {
+            setEurToUsdRate(eurRate);
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to fetch EUR rate, using current value');
+      }
+    };
     
     window.addEventListener(PORTFOLIOS_UPDATED_EVENT, handlePortfoliosUpdated);
     window.addEventListener(LOANS_UPDATED_EVENT, handleLoansUpdated as EventListener);
+    window.addEventListener('parameters-updated', handleParametersUpdated);
     
     // Cleanup listeners on unmount
     return () => {
       window.removeEventListener(PORTFOLIOS_UPDATED_EVENT, handlePortfoliosUpdated);
       window.removeEventListener(LOANS_UPDATED_EVENT, handleLoansUpdated as EventListener);
+      window.removeEventListener('parameters-updated', handleParametersUpdated);
     };
   }, []);
   
@@ -123,17 +190,54 @@ const Portfolio = () => {
     }
   }, [selectedPortfolioId]);
   
+  // Recalculate metrics when rating type changes
+  useEffect(() => {
+    if (loans.length > 0) {
+      const loansWithUpdatedMetrics = loans.map(loan => ({
+        ...loan,
+        metrics: calculateLoanMetrics(loan, defaultCalculationParameters, selectedRatingType)
+      }));
+      
+      setLoans(loansWithUpdatedMetrics);
+      setPortfolioMetrics(calculatePortfolioMetrics(loansWithUpdatedMetrics, defaultCalculationParameters, selectedRatingType));
+    }
+  }, [selectedRatingType]);
+
+  // Refresh portfolio when currency changes
+  useEffect(() => {
+    if (selectedPortfolioId) {
+      loadLoansForPortfolio(selectedPortfolioId);
+    }
+  }, [currentCurrency, currentExchangeRate]);
+  
   const loadLoansForPortfolio = (portfolioId: string) => {
     const portfolioLoans = loanDataService.getLoans(portfolioId);
     
-    // Recalculate metrics for these loans
+    // Get available rating types from all loans
+    const allAvailableRatings = new Set<RatingType>();
+    portfolioLoans.forEach(loan => {
+      if (loan.ratings) {
+        const loanRatingTypes = getAvailableRatingTypes(loan.ratings);
+        loanRatingTypes.forEach(type => allAvailableRatings.add(type));
+      }
+    });
+    
+    const availableTypes = Array.from(allAvailableRatings);
+    setAvailableRatingTypes(availableTypes);
+    
+    // Set default rating type if not already selected or not available
+    if (availableTypes.length > 0 && !availableTypes.includes(selectedRatingType)) {
+      setSelectedRatingType(availableTypes[0]);
+    }
+    
+    // Recalculate metrics for these loans using selected rating type
     const loansWithMetrics = portfolioLoans.map(loan => ({
       ...loan,
-      metrics: calculateLoanMetrics(loan, defaultCalculationParameters)
+      metrics: calculateLoanMetrics(loan, defaultCalculationParameters, selectedRatingType)
     }));
     
     setLoans(loansWithMetrics);
-    setPortfolioMetrics(calculatePortfolioMetrics(loansWithMetrics, defaultCalculationParameters));
+    setPortfolioMetrics(calculatePortfolioMetrics(loansWithMetrics, defaultCalculationParameters, selectedRatingType));
   };
   
   const handlePortfolioChange = (portfolioId: string) => {
@@ -159,13 +263,11 @@ const Portfolio = () => {
     sector: loan.sector
   }));
   
-  // Formatter to display amounts in euros
-  const formatCurrency = (value: number, currency: string = 'EUR') => {
-    return new Intl.NumberFormat('en-US', { 
-      style: 'currency', 
-      currency: currency, 
-      maximumFractionDigits: 0 
-    }).format(value);
+  // Formatter to display amounts in selected currency
+  const formatCurrency = (value: number) => {
+    // Convert from EUR to selected currency if needed
+    const convertedValue = convertCurrency(value, currentCurrency, currentExchangeRate, eurToUsdRate);
+    return formatCurrencyUtil(convertedValue, currentCurrency, { maximumFractionDigits: 0 });
   };
   
   // Event handlers for buttons
@@ -195,7 +297,10 @@ const Portfolio = () => {
       };
       
       // Use export service
-      ExcelTemplateService.exportData(portfolio, 'Performance', 'excel');
+      const result = ExcelTemplateService.generateReport('Performance', portfolio, 'excel');
+      if (!result.success) {
+        throw new Error(result.message);
+      }
     } catch (error) {
       console.error("Error exporting portfolio:", error);
       toast({
@@ -280,6 +385,31 @@ const Portfolio = () => {
                 </SelectContent>
               </Select>
             </div>
+            
+            {availableRatingTypes.length > 0 && (
+              <div className="grid gap-2">
+                <Label>Rating System for Calculations</Label>
+                <Select value={selectedRatingType} onValueChange={(value: RatingType) => setSelectedRatingType(value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select rating system" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableRatingTypes.map(ratingType => (
+                      <SelectItem key={ratingType} value={ratingType}>
+                        {ratingType === 'internal' && 'Internal Rating'}
+                        {ratingType === 'sp' && 'S&P Rating'}
+                        {ratingType === 'moodys' && "Moody's Rating"}
+                        {ratingType === 'fitch' && 'Fitch Rating'}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Only rating systems with actual values (non-N/A) are shown. 
+                  This selection affects all risk calculations (PD, LGD, RWA, EVA, etc.).
+                </p>
+              </div>
+            )}
             
             {portfolios.length === 0 && (
               <div className="text-center py-4">
@@ -430,12 +560,12 @@ const Portfolio = () => {
                         dataKey="z" 
                         range={[60, 400]} 
                         name="Outstanding" 
-                        unit="M€" 
+                        unit={`M${currentCurrency}`} 
                       />
                       <Tooltip 
                         cursor={{ strokeDasharray: '3 3' }}
                         formatter={(value: number, name: string) => [
-                          `${value.toFixed(2)}${name.includes('%') ? '%' : name.includes('M€') ? 'M€' : ''}`,
+                          `${value.toFixed(2)}${name.includes('%') ? '%' : name.includes(`M${currentCurrency}`) ? `M${currentCurrency}` : ''}`,
                           name
                         ]}
                       />
@@ -623,7 +753,7 @@ const Portfolio = () => {
                     <div className="flex justify-between">
                       <span>Average Loan Size</span>
                       <span className="font-medium">
-                        {loans.length > 0 ? formatCurrency(portfolioMetrics.totalExposure / loans.length) : '€0'}
+                        {loans.length > 0 ? formatCurrency(portfolioMetrics.totalExposure / loans.length) : formatCurrencyUtil(0, currentCurrency, { maximumFractionDigits: 0 })}
                       </span>
                     </div>
                   </div>

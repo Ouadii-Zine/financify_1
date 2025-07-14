@@ -7,12 +7,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Loan, LoanType, LoanStatus, Currency, ClientType, PortfolioSummary, SPRating, S_P_RATING_MAPPINGS } from '@/types/finance';
+import { Loan, LoanType, LoanStatus, Currency, ClientType, PortfolioSummary, SPRating, S_P_RATING_MAPPINGS, LoanRatings, InternalRating, MoodysRating, FitchRating, RatingType } from '@/types/finance';
+import { convertToSPRating, getPDFromParameters } from '@/utils/financialCalculations';
 import LoanDataService from '@/services/LoanDataService';
 
 import PortfolioService, { PORTFOLIOS_UPDATED_EVENT } from '@/services/PortfolioService';
 import ClientTemplateService from '@/services/ClientTemplateService';
-import { defaultCalculationParameters } from '@/data/sampleData';
+import ParameterService from '@/services/ParameterService';
 
 interface LoanFormData {
   id?: string;
@@ -34,14 +35,19 @@ interface LoanFormData {
   ead?: string;
   sector: string;
   country: string;
-  internalRating: SPRating;
+  
+  // Multi-rating system
+  internalRating: string;
+  spRating: string;
+  moodysRating: string;
+  fitchRating: string;
+  
   margin: string;
   referenceRate: string;
   upfrontFee?: string;
   commitmentFee?: string;
   agencyFee?: string;
   otherFee?: string;
-
 }
 
 const LoanNew = () => {
@@ -51,7 +57,7 @@ const LoanNew = () => {
   const portfolioService = PortfolioService.getInstance();
   const clientTemplateService = ClientTemplateService.getInstance();
   
-  // Vérifier si nous sommes en mode édition (via le paramètre query)
+  // Check if we're in edit mode
   const searchParams = new URLSearchParams(location.search);
   const isEditMode = searchParams.get('edit') === 'true';
   const loanId = searchParams.get('id');
@@ -60,6 +66,34 @@ const LoanNew = () => {
   const [portfolios, setPortfolios] = useState<PortfolioSummary[]>([]);
   const [isCreatePortfolioOpen, setIsCreatePortfolioOpen] = useState(false);
   const [newPortfolioName, setNewPortfolioName] = useState('');
+  
+  // Currency state management
+  const [currentCurrency, setCurrentCurrency] = useState<Currency>('USD');
+  
+  // Rating system state
+  const [selectedRatingType, setSelectedRatingType] = useState<RatingType>('sp');
+  
+  // Load currency settings from parameters
+  useEffect(() => {
+    const parameters = ParameterService.loadParameters();
+    if (parameters.currency) {
+      setCurrentCurrency(parameters.currency);
+    }
+    
+    // Add event listener for parameter updates (including currency changes)
+    const handleParametersUpdated = () => {
+      const updatedParameters = ParameterService.loadParameters();
+      if (updatedParameters.currency) {
+        setCurrentCurrency(updatedParameters.currency);
+      }
+    };
+    
+    window.addEventListener('parameters-updated', handleParametersUpdated);
+    
+    return () => {
+      window.removeEventListener('parameters-updated', handleParametersUpdated);
+    };
+  }, []);
   
   const defaultFormData: LoanFormData = {
     name: '',
@@ -70,7 +104,7 @@ const LoanNew = () => {
     status: 'active',
     startDate: new Date().toISOString().split('T')[0],
     endDate: new Date(new Date().setFullYear(new Date().getFullYear() + 5)).toISOString().split('T')[0],
-    currency: 'EUR',
+    currency: currentCurrency,
     originalAmount: '',
     outstandingAmount: '',
     drawnAmount: '',
@@ -81,6 +115,9 @@ const LoanNew = () => {
     sector: 'Technology',
     country: 'France',
     internalRating: 'BB+',
+    spRating: 'N/A',
+    moodysRating: 'N/A',
+    fitchRating: 'N/A',
     margin: '2',
     referenceRate: '3',
     upfrontFee: '0',
@@ -92,15 +129,21 @@ const LoanNew = () => {
   const [formData, setFormData] = useState<LoanFormData>(defaultFormData);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
+  // Update form currency when currentCurrency changes
+  useEffect(() => {
+    setFormData(prev => ({
+      ...prev,
+      currency: currentCurrency
+    }));
+  }, [currentCurrency]);
+  
   // Load portfolios on component mount
   useEffect(() => {
-    // Load portfolios
     const portfolioSummaries = portfolioService.getPortfolioSummaries();
     setPortfolios(portfolioSummaries);
     
     setFormData(prev => ({
       ...prev,
-      // Set pre-selected portfolio if provided in URL
       portfolioId: preSelectedPortfolioId || (portfolioSummaries.length > 0 ? portfolioSummaries.find(p => p.isDefault)?.id || portfolioSummaries[0].id : '')
     }));
   }, [preSelectedPortfolioId]);
@@ -111,24 +154,19 @@ const LoanNew = () => {
       setPageTitle('Edit Loan');
       
       try {
-        // Try to retrieve data from localStorage or directly from service
         let loanToEdit: Loan | null = null;
         
-        // First, try localStorage (set in LoanDetail)
         const storedLoan = localStorage.getItem('loan-to-edit');
         if (storedLoan) {
           loanToEdit = JSON.parse(storedLoan);
-          // Remove from localStorage once used
           localStorage.removeItem('loan-to-edit');
         }
         
-        // If not in localStorage, search in service
         if (!loanToEdit) {
           loanToEdit = loanDataService.getLoanById(loanId);
         }
         
         if (loanToEdit) {
-          // Convert values for form (percentages, etc.)
           setFormData({
             id: loanToEdit.id,
             name: loanToEdit.name,
@@ -144,14 +182,17 @@ const LoanNew = () => {
             outstandingAmount: loanToEdit.outstandingAmount.toString(),
             drawnAmount: loanToEdit.drawnAmount.toString(),
             undrawnAmount: loanToEdit.undrawnAmount.toString(),
-            pd: (loanToEdit.pd * 100).toString(), // Convertir de décimal à pourcentage
-            lgd: (loanToEdit.lgd * 100).toString(), // Convertir de décimal à pourcentage
+            pd: (loanToEdit.pd * 100).toString(),
+            lgd: (loanToEdit.lgd * 100).toString(),
             ead: loanToEdit.ead.toString(),
             sector: loanToEdit.sector,
             country: loanToEdit.country,
-            internalRating: loanToEdit.internalRating,
-            margin: (loanToEdit.margin * 100).toString(), // Convertir de décimal à pourcentage
-            referenceRate: (loanToEdit.referenceRate * 100).toString(), // Convertir de décimal à pourcentage
+            internalRating: loanToEdit.ratings?.internal || loanToEdit.internalRating || 'BB+',
+            spRating: loanToEdit.ratings?.sp || 'N/A',
+            moodysRating: loanToEdit.ratings?.moodys || 'N/A',
+            fitchRating: loanToEdit.ratings?.fitch || 'N/A',
+            margin: (loanToEdit.margin * 100).toString(),
+            referenceRate: (loanToEdit.referenceRate * 100).toString(),
             upfrontFee: loanToEdit.fees.upfront.toString(),
             commitmentFee: loanToEdit.fees.commitment.toString(),
             agencyFee: loanToEdit.fees.agency.toString(),
@@ -163,7 +204,6 @@ const LoanNew = () => {
             description: "The loan to edit cannot be found.",
             variant: "destructive"
           });
-          // Redirect to loans list
           navigate('/loans');
         }
       } catch (error) {
@@ -173,7 +213,6 @@ const LoanNew = () => {
           description: "Unable to load loan data for editing.",
           variant: "destructive"
         });
-        // Redirect to loans list
         navigate('/loans');
       }
     }
@@ -185,34 +224,58 @@ const LoanNew = () => {
   };
 
   const handleSelectChange = (name: string, value: string) => {
-    if (name === 'internalRating') {
-      // Get the PD from S&P rating mapping
-      const ratingMapping = S_P_RATING_MAPPINGS.find(r => r.rating === value);
-      if (ratingMapping) {
-        setFormData(prev => ({ 
-          ...prev, 
-          [name]: value as SPRating,
-          pd: (ratingMapping.pd * 100).toString() // Convert to percentage
-        }));
-      } else {
-        setFormData(prev => ({ ...prev, [name]: value as SPRating }));
-      }
-    } else {
     setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  // Function to calculate PD based on selected rating type and value
+  const calculatePDFromRating = () => {
+    const ratings: LoanRatings = {
+      internal: formData.internalRating !== 'N/A' ? formData.internalRating as InternalRating : undefined,
+      sp: formData.spRating !== 'N/A' ? formData.spRating as SPRating : undefined,
+      moodys: formData.moodysRating !== 'N/A' ? formData.moodysRating as MoodysRating : undefined,
+      fitch: formData.fitchRating !== 'N/A' ? formData.fitchRating as FitchRating : undefined
+    };
+
+    try {
+      // Load current parameters from the service
+      const currentParameters = ParameterService.loadParameters();
+      
+      // Get PD from the parameter configuration
+      const pd = getPDFromParameters(ratings, currentParameters, selectedRatingType);
+      
+      setFormData(prev => ({
+        ...prev,
+        pd: (pd * 100).toString() // Convert to percentage
+      }));
+    } catch (error) {
+      console.warn("Could not calculate PD from rating:", error);
     }
   };
 
+  // Effect to recalculate PD when rating type or rating values change
+  useEffect(() => {
+    calculatePDFromRating();
+  }, [selectedRatingType, formData.internalRating, formData.spRating, formData.moodysRating, formData.fitchRating]);
 
+  const handleRatingChange = (ratingType: string, value: string) => {
+    setFormData(prev => ({ ...prev, [ratingType]: value }));
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     
     try {
-      // Generate unique ID if not provided (for new loans)
       const loanId = formData.id || `loan-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       
-      // Prepare loan with form data
+      // Prepare ratings object
+      const ratings: LoanRatings = {
+        internal: formData.internalRating !== 'N/A' ? formData.internalRating as InternalRating : undefined,
+        sp: formData.spRating !== 'N/A' ? formData.spRating as SPRating : undefined,
+        moodys: formData.moodysRating !== 'N/A' ? formData.moodysRating as MoodysRating : undefined,
+        fitch: formData.fitchRating !== 'N/A' ? formData.fitchRating as FitchRating : undefined
+      };
+
       const preparedLoan: Loan = {
         id: loanId,
         name: formData.name,
@@ -225,24 +288,25 @@ const LoanNew = () => {
         endDate: formData.endDate,
         currency: formData.currency as Currency,
         originalAmount: parseFloat(formData.originalAmount.toString()),
-        outstandingAmount: parseFloat(formData.originalAmount.toString()), // Always equal to original amount for new/edited loans
-        drawnAmount: parseFloat(formData.originalAmount.toString()), // Default to fully drawn
-        undrawnAmount: 0, // Default to no undrawn amount
-        pd: parseFloat(formData.pd.toString()) / 100, // Convertir en décimal
-        lgd: parseFloat(formData.lgd.toString()) / 100, // Convertir en décimal
-        ead: parseFloat(formData.originalAmount.toString()), // EAD equals the original amount
+        outstandingAmount: parseFloat(formData.originalAmount.toString()),
+        drawnAmount: parseFloat(formData.originalAmount.toString()),
+        undrawnAmount: 0,
+        pd: parseFloat(formData.pd.toString()) / 100,
+        lgd: parseFloat(formData.lgd.toString()) / 100,
+        ead: parseFloat(formData.originalAmount.toString()),
         fees: {
           upfront: parseFloat(formData.upfrontFee?.toString() || '0'),
           commitment: parseFloat(formData.commitmentFee?.toString() || '0'),
           agency: parseFloat(formData.agencyFee?.toString() || '0'),
           other: parseFloat(formData.otherFee?.toString() || '0')
         },
-        margin: parseFloat(formData.margin.toString()) / 100, // Convertir en décimal
-        referenceRate: parseFloat(formData.referenceRate.toString()) / 100, // Convertir en décimal
-        internalRating: formData.internalRating,
+        margin: parseFloat(formData.margin.toString()) / 100,
+        referenceRate: parseFloat(formData.referenceRate.toString()) / 100,
+        internalRating: formData.internalRating as SPRating, // Backward compatibility
+        ratings: ratings, // New multi-rating system
         sector: formData.sector,
         country: formData.country,
-        cashFlows: [], // Conserver les cash flows existants en cas d'édition
+        cashFlows: [],
         metrics: {
           evaIntrinsic: 0,
           evaSale: 0,
@@ -258,24 +322,21 @@ const LoanNew = () => {
       };
       
       if (isEditMode && formData.id) {
-        // Edit mode: delete old loan and create new one (to ensure proper recalculation)
         const deleteSuccess = loanDataService.deleteLoan(formData.id);
         
         if (deleteSuccess) {
-          // Create the new loan with the same ID but fresh calculations
-          loanDataService.addLoan(preparedLoan, formData.portfolioId, defaultCalculationParameters);
+          loanDataService.addLoan(preparedLoan, formData.portfolioId, ParameterService.loadParameters());
           
           toast({
             title: "Loan updated",
-            description: `The loan "${preparedLoan.name}" has been successfully updated with fresh calculations.`,
+            description: `The loan "${preparedLoan.name}" has been successfully updated.`,
             variant: "default"
           });
         } else {
           throw new Error("Failed to update loan - could not remove old version.");
         }
       } else {
-        // Creation mode: add new loan
-        loanDataService.addLoan(preparedLoan, formData.portfolioId, defaultCalculationParameters);
+        loanDataService.addLoan(preparedLoan, formData.portfolioId, ParameterService.loadParameters());
         
         toast({
           title: "Loan created",
@@ -284,7 +345,6 @@ const LoanNew = () => {
         });
       }
       
-      // Redirect to loans list with a short delay to ensure event is processed
       setTimeout(() => {
         navigate('/loans');
       }, 500);
@@ -301,7 +361,27 @@ const LoanNew = () => {
     }
   };
 
+  // Get available rating options
+  const getInternalRatingOptions = () => [
+    '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12',
+    'AAA', 'AA+', 'AA', 'AA-', 'A+', 'A', 'A-', 'BBB+', 'BBB', 'BBB-',
+    'BB+', 'BB', 'BB-', 'B+', 'B', 'B-', 'CCC+', 'CCC', 'CCC-', 'CC', 'C', 'D'
+  ];
 
+  const getSPRatingOptions = () => [
+    'AAA', 'AA+', 'AA', 'AA-', 'A+', 'A', 'A-', 'BBB+', 'BBB', 'BBB-',
+    'BB+', 'BB', 'BB-', 'B+', 'B', 'B-', 'CCC+', 'CCC', 'CCC-', 'CC', 'C', 'D'
+  ];
+
+  const getMoodysRatingOptions = () => [
+    'Aaa', 'Aa1', 'Aa2', 'Aa3', 'A1', 'A2', 'A3', 'Baa1', 'Baa2', 'Baa3',
+    'Ba1', 'Ba2', 'Ba3', 'B1', 'B2', 'B3', 'Caa1', 'Caa2', 'Caa3', 'Ca', 'C', 'D'
+  ];
+
+  const getFitchRatingOptions = () => [
+    'AAA', 'AA+', 'AA', 'AA-', 'A+', 'A', 'A-', 'BBB+', 'BBB', 'BBB-',
+    'BB+', 'BB', 'BB-', 'B+', 'B', 'B-', 'CCC+', 'CCC', 'CCC-', 'CC', 'C', 'RD', 'D'
+  ];
 
   return (
     <div className="space-y-6">
@@ -457,11 +537,32 @@ const LoanNew = () => {
                     <SelectValue placeholder="Select a currency" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="EUR">EUR</SelectItem>
-                    <SelectItem value="USD">USD</SelectItem>
-                    <SelectItem value="GBP">GBP</SelectItem>
-                    <SelectItem value="CHF">CHF</SelectItem>
-                    <SelectItem value="JPY">JPY</SelectItem>
+                    {[
+                      { code: 'USD', name: 'US Dollar' },
+                      { code: 'EUR', name: 'Euro' },
+                      { code: 'GBP', name: 'British Pound' },
+                      { code: 'CHF', name: 'Swiss Franc' },
+                      { code: 'JPY', name: 'Japanese Yen' },
+                      { code: 'CAD', name: 'Canadian Dollar' },
+                      { code: 'AUD', name: 'Australian Dollar' },
+                      { code: 'CNY', name: 'Chinese Yuan' },
+                      { code: 'MAD', name: 'Moroccan Dirham' },
+                      { code: 'INR', name: 'Indian Rupee' },
+                      { code: 'BRL', name: 'Brazilian Real' },
+                      { code: 'MXN', name: 'Mexican Peso' },
+                      { code: 'KRW', name: 'South Korean Won' },
+                      { code: 'SGD', name: 'Singapore Dollar' },
+                      { code: 'NOK', name: 'Norwegian Krone' },
+                      { code: 'SEK', name: 'Swedish Krona' },
+                      { code: 'DKK', name: 'Danish Krone' },
+                      { code: 'PLN', name: 'Polish Zloty' },
+                      { code: 'CZK', name: 'Czech Koruna' },
+                      { code: 'HUF', name: 'Hungarian Forint' },
+                    ].map(currency => (
+                      <SelectItem key={currency.code} value={currency.code}>
+                        {currency.code} - {currency.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -490,6 +591,112 @@ const LoanNew = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Rating System Selection */}
+            <div className="p-4 border rounded-lg bg-muted/50">
+              <h3 className="text-lg font-medium mb-4">Credit Rating System</h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div className="space-y-2">
+                  <Label>Rating Type for PD Calculation</Label>
+                  <Select 
+                    value={selectedRatingType} 
+                    onValueChange={(value: RatingType) => setSelectedRatingType(value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select rating type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="internal">Internal Rating</SelectItem>
+                      <SelectItem value="sp">S&P Rating</SelectItem>
+                      <SelectItem value="moodys">Moody's Rating</SelectItem>
+                      <SelectItem value="fitch">Fitch Rating</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Select which rating system to use for automatic PD calculation
+                  </p>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="internalRating">Internal Rating</Label>
+                  <Select 
+                    value={formData.internalRating} 
+                    onValueChange={(value) => handleRatingChange('internalRating', value)}
+                  >
+                    <SelectTrigger id="internalRating">
+                      <SelectValue placeholder="Select internal rating" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="N/A">N/A</SelectItem>
+                      {getInternalRatingOptions().map(rating => (
+                        <SelectItem key={rating} value={rating}>{rating}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="spRating">S&P Rating</Label>
+                  <Select 
+                    value={formData.spRating} 
+                    onValueChange={(value) => handleRatingChange('spRating', value)}
+                  >
+                    <SelectTrigger id="spRating">
+                      <SelectValue placeholder="Select S&P rating" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="N/A">N/A</SelectItem>
+                      {getSPRatingOptions().map(rating => (
+                        <SelectItem key={rating} value={rating}>{rating}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="moodysRating">Moody's Rating</Label>
+                  <Select 
+                    value={formData.moodysRating} 
+                    onValueChange={(value) => handleRatingChange('moodysRating', value)}
+                  >
+                    <SelectTrigger id="moodysRating">
+                      <SelectValue placeholder="Select Moody's rating" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="N/A">N/A</SelectItem>
+                      {getMoodysRatingOptions().map(rating => (
+                        <SelectItem key={rating} value={rating}>{rating}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="fitchRating">Fitch Rating</Label>
+                  <Select 
+                    value={formData.fitchRating} 
+                    onValueChange={(value) => handleRatingChange('fitchRating', value)}
+                  >
+                    <SelectTrigger id="fitchRating">
+                      <SelectValue placeholder="Select Fitch rating" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="N/A">N/A</SelectItem>
+                      {getFitchRatingOptions().map(rating => (
+                        <SelectItem key={rating} value={rating}>{rating}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              
+              <p className="text-xs text-muted-foreground mt-2">
+                At least one rating must be provided (not N/A). The selected rating type above will be used for automatic PD calculation.
+              </p>
+            </div>
+            
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="pd">Probability of Default (%)</Label>
@@ -502,6 +709,9 @@ const LoanNew = () => {
                   onChange={handleInputChange} 
                   placeholder="1.0" 
                 />
+                <p className="text-xs text-muted-foreground">
+                  Auto-calculated from selected rating type
+                </p>
               </div>
               
               <div className="space-y-2">
@@ -515,42 +725,6 @@ const LoanNew = () => {
                   onChange={handleInputChange} 
                   placeholder="45.0" 
                 />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="internalRating">Internal Rating (S&P)</Label>
-                <Select 
-                  value={formData.internalRating} 
-                  onValueChange={(value) => handleSelectChange('internalRating', value)}
-                >
-                  <SelectTrigger id="internalRating">
-                    <SelectValue placeholder="Select S&P rating" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="AAA">AAA</SelectItem>
-                    <SelectItem value="AA+">AA+</SelectItem>
-                    <SelectItem value="AA">AA</SelectItem>
-                    <SelectItem value="AA-">AA-</SelectItem>
-                    <SelectItem value="A+">A+</SelectItem>
-                    <SelectItem value="A">A</SelectItem>
-                    <SelectItem value="A-">A-</SelectItem>
-                    <SelectItem value="BBB+">BBB+</SelectItem>
-                    <SelectItem value="BBB">BBB</SelectItem>
-                    <SelectItem value="BBB-">BBB-</SelectItem>
-                    <SelectItem value="BB+">BB+</SelectItem>
-                    <SelectItem value="BB">BB</SelectItem>
-                    <SelectItem value="BB-">BB-</SelectItem>
-                    <SelectItem value="B+">B+</SelectItem>
-                    <SelectItem value="B">B</SelectItem>
-                    <SelectItem value="B-">B-</SelectItem>
-                    <SelectItem value="CCC+">CCC+</SelectItem>
-                    <SelectItem value="CCC">CCC</SelectItem>
-                    <SelectItem value="CCC-">CCC-</SelectItem>
-                    <SelectItem value="CC">CC</SelectItem>
-                    <SelectItem value="C">C</SelectItem>
-                    <SelectItem value="D">D</SelectItem>
-                  </SelectContent>
-                </Select>
               </div>
               
               <div className="space-y-2">
@@ -593,41 +767,127 @@ const LoanNew = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="sector">Sector</Label>
-                <Input 
-                  id="sector" 
-                  name="sector" 
+                <Select 
                   value={formData.sector} 
-                  onChange={handleInputChange} 
-                  placeholder="Technology" 
-                />
+                  onValueChange={(value) => handleSelectChange('sector', value)}
+                >
+                  <SelectTrigger id="sector">
+                    <SelectValue placeholder="Select a sector" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Technology">Technology</SelectItem>
+                    <SelectItem value="Healthcare">Healthcare</SelectItem>
+                    <SelectItem value="Financial Services">Financial Services</SelectItem>
+                    <SelectItem value="Energy">Energy</SelectItem>
+                    <SelectItem value="Manufacturing">Manufacturing</SelectItem>
+                    <SelectItem value="Retail">Retail</SelectItem>
+                    <SelectItem value="Real Estate">Real Estate</SelectItem>
+                    <SelectItem value="Transportation">Transportation</SelectItem>
+                    <SelectItem value="Telecommunications">Telecommunications</SelectItem>
+                    <SelectItem value="Other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               
               <div className="space-y-2">
                 <Label htmlFor="country">Country</Label>
-                <Input 
-                  id="country" 
-                  name="country" 
+                <Select 
                   value={formData.country} 
+                  onValueChange={(value) => handleSelectChange('country', value)}
+                >
+                  <SelectTrigger id="country">
+                    <SelectValue placeholder="Select a country" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="France">France</SelectItem>
+                    <SelectItem value="Germany">Germany</SelectItem>
+                    <SelectItem value="United Kingdom">United Kingdom</SelectItem>
+                    <SelectItem value="Spain">Spain</SelectItem>
+                    <SelectItem value="Italy">Italy</SelectItem>
+                    <SelectItem value="Netherlands">Netherlands</SelectItem>
+                    <SelectItem value="Switzerland">Switzerland</SelectItem>
+                    <SelectItem value="United States">United States</SelectItem>
+                    <SelectItem value="Canada">Canada</SelectItem>
+                    <SelectItem value="Other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Fees</CardTitle>
+            <CardDescription>
+              Various fee structures associated with the loan
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="upfrontFee">Upfront Fee</Label>
+                <Input 
+                  id="upfrontFee" 
+                  name="upfrontFee" 
+                  type="number" 
+                  step="0.01" 
+                  value={formData.upfrontFee} 
                   onChange={handleInputChange} 
-                  placeholder="France" 
+                  placeholder="0" 
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="commitmentFee">Commitment Fee (%)</Label>
+                <Input 
+                  id="commitmentFee" 
+                  name="commitmentFee" 
+                  type="number" 
+                  step="0.01" 
+                  value={formData.commitmentFee} 
+                  onChange={handleInputChange} 
+                  placeholder="0" 
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="agencyFee">Agency Fee</Label>
+                <Input 
+                  id="agencyFee" 
+                  name="agencyFee" 
+                  type="number" 
+                  step="0.01" 
+                  value={formData.agencyFee} 
+                  onChange={handleInputChange} 
+                  placeholder="0" 
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="otherFee">Other Fee</Label>
+                <Input 
+                  id="otherFee" 
+                  name="otherFee" 
+                  type="number" 
+                  step="0.01" 
+                  value={formData.otherFee} 
+                  onChange={handleInputChange} 
+                  placeholder="0" 
                 />
               </div>
             </div>
           </CardContent>
         </Card>
 
-
-
-        <Card className="mt-6">
-          <CardFooter className="flex justify-between">
-            <Button variant="outline" type="button" onClick={() => navigate('/loans')}>
+        <div className="flex items-center gap-4 mt-6">
+          <Button type="submit" disabled={isSubmitting}>
+            {isSubmitting ? 'Saving...' : isEditMode ? 'Update Loan' : 'Create Loan'}
+          </Button>
+          <Button type="button" variant="outline" onClick={() => navigate('/loans')}>
               Cancel
             </Button>
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? 'Creating...' : isEditMode ? 'Update Loan' : 'Create Loan'}
-            </Button>
-          </CardFooter>
-        </Card>
+        </div>
       </form>
     </div>
   );

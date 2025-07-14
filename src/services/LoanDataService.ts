@@ -1,5 +1,5 @@
 import { Loan, CalculationParameters, Portfolio } from '../types/finance';
-import { calculateLoanMetrics, calculatePortfolioMetrics } from '../utils/financialCalculations';
+import { calculateLoanMetrics, calculatePortfolioMetrics, updateLoansWithNewParameters } from '../utils/financialCalculations';
 import { sampleLoans, defaultCalculationParameters } from '../data/sampleData';
 import DynamicColumnsService from './DynamicColumnsService';
 import PortfolioService from './PortfolioService';
@@ -203,23 +203,30 @@ class LoanDataService {
     return this.calculationParams;
   }
   
-  // Update calculation parameters
+  // Update calculation parameters and recalculate all loan PD values and metrics
   updateCalculationParams(params: Partial<CalculationParameters>): void {
     this.calculationParams = { ...this.calculationParams, ...params };
     
-    // Recalculate metrics for all loans in all portfolios
+    console.log('LoanDataService: Updating calculation parameters and recalculating all loans...');
+    
+    // Recalculate PD values and metrics for all loans in all portfolios
     const portfolios = this.portfolioService.getPortfolios();
+    let totalUpdatedLoans = 0;
+    
     portfolios.forEach(portfolio => {
-      const updatedLoans = portfolio.loans.map(loan => ({
-        ...loan,
-        metrics: calculateLoanMetrics(loan, this.calculationParams)
-      }));
-      
-      if (updatedLoans.length > 0) {
+      if (portfolio.loans.length > 0) {
+        // Update loans with new PD values based on parameter mappings and recalculate metrics
+        const updatedLoans = updateLoansWithNewParameters(portfolio.loans, this.calculationParams);
+        
+        // Update the portfolio with the new loan data
         this.portfolioService.updatePortfolio(portfolio.id, { loans: updatedLoans });
+        totalUpdatedLoans += updatedLoans.length;
+        
+        console.log(`Updated ${updatedLoans.length} loans in portfolio: ${portfolio.name}`);
       }
     });
     
+    console.log(`Total loans updated: ${totalUpdatedLoans}`);
     this.dispatchLoansUpdated();
   }
 

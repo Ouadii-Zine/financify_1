@@ -1,5 +1,5 @@
 
-import { Loan, Portfolio, CalculationParameters } from '../types/finance';
+import { Loan, Portfolio, CalculationParameters, InternalRating, SPRating, MoodysRating, FitchRating } from '../types/finance';
 
 // Paramètres de calcul par défaut
 export const defaultCalculationParameters: CalculationParameters = {
@@ -8,6 +8,8 @@ export const defaultCalculationParameters: CalculationParameters = {
   capitalRatio: 0.08, // 8%
   fundingCost: 0.02, // 2%
   operationalCostRatio: 0.01, // 1%
+  currency: 'USD', // Default display currency (matches API base)
+  exchangeRate: 1.0, // Default rate (USD to USD)
   pdCurve: [
     { rating: 'AAA', pd: 0.0001 },
     { rating: 'AA', pd: 0.0008 },
@@ -20,6 +22,117 @@ export const defaultCalculationParameters: CalculationParameters = {
     { rating: 'C', pd: 0.3622 },
     { rating: 'D', pd: 1.0 }
   ],
+  ratingPDMappings: {
+    internal: [
+      { rating: '1' as InternalRating, pd: 0.0001 }, // AAA equivalent
+      { rating: '2' as InternalRating, pd: 0.0003 }, // AA equivalent
+      { rating: '3' as InternalRating, pd: 0.0008 }, // A+ equivalent
+      { rating: '4' as InternalRating, pd: 0.0018 }, // A- equivalent
+      { rating: '5' as InternalRating, pd: 0.0025 }, // BBB+ equivalent
+      { rating: '6' as InternalRating, pd: 0.0050 }, // BBB- equivalent
+      { rating: '7' as InternalRating, pd: 0.0075 }, // BB+ equivalent
+      { rating: '8' as InternalRating, pd: 0.0200 }, // BB- equivalent
+      { rating: '9' as InternalRating, pd: 0.0350 }, // B+ equivalent
+      { rating: '10' as InternalRating, pd: 0.1000 }, // B- equivalent
+      { rating: '11' as InternalRating, pd: 0.2500 }, // CCC equivalent
+      { rating: '12' as InternalRating, pd: 1.0000 }, // D equivalent
+      { rating: 'AAA' as InternalRating, pd: 0.0001 },
+      { rating: 'AA+' as InternalRating, pd: 0.0002 },
+      { rating: 'AA' as InternalRating, pd: 0.0003 },
+      { rating: 'AA-' as InternalRating, pd: 0.0005 },
+      { rating: 'A+' as InternalRating, pd: 0.0008 },
+      { rating: 'A' as InternalRating, pd: 0.0012 },
+      { rating: 'A-' as InternalRating, pd: 0.0018 },
+      { rating: 'BBB+' as InternalRating, pd: 0.0025 },
+      { rating: 'BBB' as InternalRating, pd: 0.0035 },
+      { rating: 'BBB-' as InternalRating, pd: 0.0050 },
+      { rating: 'BB+' as InternalRating, pd: 0.0075 },
+      { rating: 'BB' as InternalRating, pd: 0.0125 },
+      { rating: 'BB-' as InternalRating, pd: 0.0200 },
+      { rating: 'B+' as InternalRating, pd: 0.0350 },
+      { rating: 'B' as InternalRating, pd: 0.0600 },
+      { rating: 'B-' as InternalRating, pd: 0.1000 },
+      { rating: 'CCC+' as InternalRating, pd: 0.1500 },
+      { rating: 'CCC' as InternalRating, pd: 0.2500 },
+      { rating: 'CCC-' as InternalRating, pd: 0.4000 },
+      { rating: 'CC' as InternalRating, pd: 0.6000 },
+      { rating: 'C' as InternalRating, pd: 0.8000 },
+      { rating: 'D' as InternalRating, pd: 1.0000 }
+    ],
+    sp: [
+      { rating: 'AAA' as SPRating, pd: 0.0001 },
+      { rating: 'AA+' as SPRating, pd: 0.0002 },
+      { rating: 'AA' as SPRating, pd: 0.0003 },
+      { rating: 'AA-' as SPRating, pd: 0.0005 },
+      { rating: 'A+' as SPRating, pd: 0.0008 },
+      { rating: 'A' as SPRating, pd: 0.0012 },
+      { rating: 'A-' as SPRating, pd: 0.0018 },
+      { rating: 'BBB+' as SPRating, pd: 0.0025 },
+      { rating: 'BBB' as SPRating, pd: 0.0035 },
+      { rating: 'BBB-' as SPRating, pd: 0.0050 },
+      { rating: 'BB+' as SPRating, pd: 0.0075 },
+      { rating: 'BB' as SPRating, pd: 0.0125 },
+      { rating: 'BB-' as SPRating, pd: 0.0200 },
+      { rating: 'B+' as SPRating, pd: 0.0350 },
+      { rating: 'B' as SPRating, pd: 0.0600 },
+      { rating: 'B-' as SPRating, pd: 0.1000 },
+      { rating: 'CCC+' as SPRating, pd: 0.1500 },
+      { rating: 'CCC' as SPRating, pd: 0.2500 },
+      { rating: 'CCC-' as SPRating, pd: 0.4000 },
+      { rating: 'CC' as SPRating, pd: 0.6000 },
+      { rating: 'C' as SPRating, pd: 0.8000 },
+      { rating: 'D' as SPRating, pd: 1.0000 }
+    ],
+    moodys: [
+      { rating: 'Aaa' as MoodysRating, pd: 0.0001 },
+      { rating: 'Aa1' as MoodysRating, pd: 0.0002 },
+      { rating: 'Aa2' as MoodysRating, pd: 0.0003 },
+      { rating: 'Aa3' as MoodysRating, pd: 0.0005 },
+      { rating: 'A1' as MoodysRating, pd: 0.0008 },
+      { rating: 'A2' as MoodysRating, pd: 0.0012 },
+      { rating: 'A3' as MoodysRating, pd: 0.0018 },
+      { rating: 'Baa1' as MoodysRating, pd: 0.0025 },
+      { rating: 'Baa2' as MoodysRating, pd: 0.0035 },
+      { rating: 'Baa3' as MoodysRating, pd: 0.0050 },
+      { rating: 'Ba1' as MoodysRating, pd: 0.0075 },
+      { rating: 'Ba2' as MoodysRating, pd: 0.0125 },
+      { rating: 'Ba3' as MoodysRating, pd: 0.0200 },
+      { rating: 'B1' as MoodysRating, pd: 0.0350 },
+      { rating: 'B2' as MoodysRating, pd: 0.0600 },
+      { rating: 'B3' as MoodysRating, pd: 0.1000 },
+      { rating: 'Caa1' as MoodysRating, pd: 0.1500 },
+      { rating: 'Caa2' as MoodysRating, pd: 0.2500 },
+      { rating: 'Caa3' as MoodysRating, pd: 0.4000 },
+      { rating: 'Ca' as MoodysRating, pd: 0.6000 },
+      { rating: 'C' as MoodysRating, pd: 0.8000 },
+      { rating: 'D' as MoodysRating, pd: 1.0000 }
+    ],
+    fitch: [
+      { rating: 'AAA' as FitchRating, pd: 0.0001 },
+      { rating: 'AA+' as FitchRating, pd: 0.0002 },
+      { rating: 'AA' as FitchRating, pd: 0.0003 },
+      { rating: 'AA-' as FitchRating, pd: 0.0005 },
+      { rating: 'A+' as FitchRating, pd: 0.0008 },
+      { rating: 'A' as FitchRating, pd: 0.0012 },
+      { rating: 'A-' as FitchRating, pd: 0.0018 },
+      { rating: 'BBB+' as FitchRating, pd: 0.0025 },
+      { rating: 'BBB' as FitchRating, pd: 0.0035 },
+      { rating: 'BBB-' as FitchRating, pd: 0.0050 },
+      { rating: 'BB+' as FitchRating, pd: 0.0075 },
+      { rating: 'BB' as FitchRating, pd: 0.0125 },
+      { rating: 'BB-' as FitchRating, pd: 0.0200 },
+      { rating: 'B+' as FitchRating, pd: 0.0350 },
+      { rating: 'B' as FitchRating, pd: 0.0600 },
+      { rating: 'B-' as FitchRating, pd: 0.1000 },
+      { rating: 'CCC+' as FitchRating, pd: 0.1500 },
+      { rating: 'CCC' as FitchRating, pd: 0.2500 },
+      { rating: 'CCC-' as FitchRating, pd: 0.4000 },
+      { rating: 'CC' as FitchRating, pd: 0.6000 },
+      { rating: 'C' as FitchRating, pd: 0.8000 },
+      { rating: 'RD' as FitchRating, pd: 0.9000 },
+      { rating: 'D' as FitchRating, pd: 1.0000 }
+    ]
+  },
   lgdAssumptions: [
     { sector: 'Banking', lgd: 0.45 },
     { sector: 'Technology', lgd: 0.55 },
@@ -32,6 +145,13 @@ export const defaultCalculationParameters: CalculationParameters = {
     { sector: 'Automotive', lgd: 0.65 },
     { sector: 'Agriculture', lgd: 0.45 }
   ],
+  transitionMatrices: {
+    // Initialize with empty arrays - will be populated from separate matrix files when Reset to Default is clicked
+    internal: [],
+    sp: [],
+    moodys: [],
+    fitch: []
+  },
   stressScenarios: [
     {
       name: 'Mild Recession',

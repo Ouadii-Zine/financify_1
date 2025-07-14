@@ -67,13 +67,15 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { defaultCalculationParameters } from '../data/sampleData';
-import { Loan, PortfolioSummary, ClientType } from '../types/finance';
+import { Loan, PortfolioSummary, ClientType, Currency } from '../types/finance';
 import { calculateLoanMetrics } from '../utils/financialCalculations';
 import LoanDataService from '../services/LoanDataService';
 import PortfolioService, { PORTFOLIOS_UPDATED_EVENT } from '../services/PortfolioService';
 import ExcelTemplateService from '../services/ExcelTemplateService';
 import { toast } from '@/hooks/use-toast';
 import { LOANS_UPDATED_EVENT } from '../services/LoanDataService';
+import ParameterService from '@/services/ParameterService';
+import { formatCurrency as formatCurrencyUtil, convertCurrency } from '@/utils/currencyUtils';
 
 const LoansList = () => {
   const navigate = useNavigate();
@@ -84,6 +86,11 @@ const LoansList = () => {
   const [portfolios, setPortfolios] = useState<PortfolioSummary[]>([]);
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<string>('');
   const [loans, setLoans] = useState<Loan[]>([]);
+  
+  // Currency state management
+  const [currentCurrency, setCurrentCurrency] = useState<Currency>('USD');
+  const [currentExchangeRate, setCurrentExchangeRate] = useState<number>(1.0);
+  const [eurToUsdRate, setEurToUsdRate] = useState<number>(1.0968); // EUR to USD rate
   
   // Filtering and search state
   const [searchTerm, setSearchTerm] = useState('');
@@ -99,6 +106,36 @@ const LoansList = () => {
   // Dialog states
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [loanToDelete, setLoanToDelete] = useState<string | null>(null);
+  
+  // Load currency settings from parameters and fetch EUR rate
+  useEffect(() => {
+    const loadCurrencySettings = async () => {
+      const parameters = ParameterService.loadParameters();
+      if (parameters.currency) {
+        setCurrentCurrency(parameters.currency);
+      }
+      if (parameters.exchangeRate) {
+        setCurrentExchangeRate(parameters.exchangeRate);
+      }
+      
+      // Always fetch the EUR rate for conversion calculations
+      try {
+        const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+        if (response.ok) {
+          const data = await response.json();
+          const eurRate = data.rates?.EUR;
+          if (eurRate) {
+            setEurToUsdRate(eurRate);
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to fetch EUR rate, using fallback:', error);
+        setEurToUsdRate(0.9689); // Fallback EUR rate
+      }
+    };
+    
+    loadCurrencySettings();
+  }, []);
 
   useEffect(() => {
     loadPortfolios();
@@ -113,13 +150,40 @@ const LoansList = () => {
         loadLoansForPortfolio(selectedPortfolioId);
       }
     };
+
+    // Add event listener for parameter updates (including currency changes)
+    const handleParametersUpdated = async () => {
+      const parameters = ParameterService.loadParameters();
+      if (parameters.currency) {
+        setCurrentCurrency(parameters.currency);
+      }
+      if (parameters.exchangeRate) {
+        setCurrentExchangeRate(parameters.exchangeRate);
+      }
+      
+      // Refresh EUR rate when parameters are updated
+      try {
+        const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+        if (response.ok) {
+          const data = await response.json();
+          const eurRate = data.rates?.EUR;
+          if (eurRate) {
+            setEurToUsdRate(eurRate);
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to fetch EUR rate, using current value');
+      }
+    };
     
     window.addEventListener(PORTFOLIOS_UPDATED_EVENT, handlePortfoliosUpdated);
     window.addEventListener(LOANS_UPDATED_EVENT, handleLoansUpdated);
+    window.addEventListener('parameters-updated', handleParametersUpdated);
     
     return () => {
       window.removeEventListener(PORTFOLIOS_UPDATED_EVENT, handlePortfoliosUpdated);
       window.removeEventListener(LOANS_UPDATED_EVENT, handleLoansUpdated);
+      window.removeEventListener('parameters-updated', handleParametersUpdated);
     };
   }, []);
   
@@ -241,11 +305,9 @@ const LoansList = () => {
   };
   
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'EUR',
-      maximumFractionDigits: 0
-    }).format(amount);
+    // Convert from EUR to selected currency if needed
+    const convertedValue = convertCurrency(amount, currentCurrency, currentExchangeRate, eurToUsdRate);
+    return formatCurrencyUtil(convertedValue, currentCurrency, { maximumFractionDigits: 0 });
   };
   
   const formatPercent = (value: number) => {
@@ -294,7 +356,27 @@ const LoansList = () => {
       });
     
     try {
-      ExcelTemplateService.exportData(portfolio, 'Loans', 'excel');
+      const result = ExcelTemplateService.generateReport('Performance', portfolio, 'csv');
+      if (result.success && result.content && result.filename) {
+        // Create and download the file
+        const blob = new Blob([result.content], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = result.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        toast({
+          title: "Success",
+          description: "Loans exported successfully.",
+          variant: "default"
+        });
+      } else {
+        throw new Error(result.message);
+      }
     } catch (error: any) {
       toast({
         title: "Error",
@@ -373,7 +455,7 @@ const LoansList = () => {
           </Button>
           <Button onClick={() => navigate('/loans/new')}>
             <Plus className="h-4 w-4 mr-2" />
-            New Loan
+                New Loan
           </Button>
         </div>
       </div>

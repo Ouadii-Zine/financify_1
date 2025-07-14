@@ -30,16 +30,51 @@ import {
 } from 'lucide-react';
 import { samplePortfolio, defaultCalculationParameters } from '../data/sampleData';
 import { calculatePortfolioMetrics, calculateLoanMetrics } from '../utils/financialCalculations';
-import { Loan } from '../types/finance';
+import { Loan, Currency } from '../types/finance';
 import LoanDataService from '../services/LoanDataService';
 import { LOANS_UPDATED_EVENT } from '../services/LoanDataService';
+import ParameterService from '../services/ParameterService';
+import { formatCurrency as formatCurrencyUtil, convertCurrency } from '../utils/currencyUtils';
 
 const COLORS = ['#00C48C', '#2D5BFF', '#FFB800', '#FF3B5B', '#1A2C42'];
 
 const Dashboard = () => {
   const [portfolio, setPortfolio] = useState(samplePortfolio);
   const [portfolioMetrics, setPortfolioMetrics] = useState(portfolio.metrics);
+  const [currentCurrency, setCurrentCurrency] = useState<Currency>('USD');
+  const [currentExchangeRate, setCurrentExchangeRate] = useState<number>(1.0);
+  const [eurToUsdRate, setEurToUsdRate] = useState<number>(1.0968); // EUR to USD rate
   const loanDataService = LoanDataService.getInstance();
+  
+  // Load currency settings from parameters and fetch EUR rate
+  useEffect(() => {
+    const loadCurrencySettings = async () => {
+      const parameters = ParameterService.loadParameters();
+      if (parameters.currency) {
+        setCurrentCurrency(parameters.currency);
+      }
+      if (parameters.exchangeRate) {
+        setCurrentExchangeRate(parameters.exchangeRate);
+      }
+      
+      // Always fetch the EUR rate for conversion calculations
+      try {
+        const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+        if (response.ok) {
+          const data = await response.json();
+          const eurRate = data.rates?.EUR;
+          if (eurRate) {
+            setEurToUsdRate(eurRate);
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to fetch EUR rate, using fallback:', error);
+        setEurToUsdRate(0.9689); // Fallback EUR rate
+      }
+    };
+    
+    loadCurrencySettings();
+  }, []);
   
   const loadDashboardData = () => {
     // Load data from service
@@ -104,14 +139,48 @@ const Dashboard = () => {
     const handleLoansUpdated = () => {
       loadDashboardData();
     };
+
+    // Add event listener for parameter updates (including currency changes)
+    const handleParametersUpdated = async () => {
+      const parameters = ParameterService.loadParameters();
+      if (parameters.currency) {
+        setCurrentCurrency(parameters.currency);
+      }
+      if (parameters.exchangeRate) {
+        setCurrentExchangeRate(parameters.exchangeRate);
+      }
+      
+      // Refresh EUR rate when parameters are updated
+      try {
+        const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+        if (response.ok) {
+          const data = await response.json();
+          const eurRate = data.rates?.EUR;
+          if (eurRate) {
+            setEurToUsdRate(eurRate);
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to fetch EUR rate, using current value');
+      }
+      
+      loadDashboardData();
+    };
     
     window.addEventListener(LOANS_UPDATED_EVENT, handleLoansUpdated);
+    window.addEventListener('parameters-updated', handleParametersUpdated);
     
-    // Cleanup listener on component unmount
+    // Cleanup listeners on component unmount
     return () => {
       window.removeEventListener(LOANS_UPDATED_EVENT, handleLoansUpdated);
+      window.removeEventListener('parameters-updated', handleParametersUpdated);
     };
   }, []);
+
+  // Refresh dashboard when currency changes
+  useEffect(() => {
+    loadDashboardData();
+  }, [currentCurrency, currentExchangeRate]);
   
   // Add this function to calculate sector data
   const [sectorData, setSectorData] = useState<{ name: string; value: number }[]>([]);
@@ -129,13 +198,55 @@ const Dashboard = () => {
     }, [] as { name: string; value: number }[]);
   };
   
-  // Data for EVA vs P&L evolution
-  const evaVsPnlData = [
-    { name: 'Q1 2023', eva: 1200000, pnl: 1450000 },
-    { name: 'Q2 2023', eva: 1350000, pnl: 1550000 },
-    { name: 'Q3 2023', eva: 1100000, pnl: 1400000 },
-    { name: 'Q4 2023', eva: 1500000, pnl: 1700000 },
-    { name: 'Q1 2024', eva: 1650000, pnl: 1800000 },
+  // Data for actual portfolio performance by sector
+  const performanceBySector = portfolio.loans.reduce((acc, loan) => {
+    const existingSector = acc.find(item => item.sector === loan.sector);
+    const loanROE = (loan.metrics?.roe || 0) * 100;
+    const loanRAROC = (loan.metrics?.raroc || 0) * 100;
+    const loanEVA = loan.metrics?.evaIntrinsic || 0;
+    
+    if (existingSector) {
+      existingSector.totalEVA += loanEVA;
+      existingSector.totalExposure += loan.originalAmount;
+      existingSector.loanCount += 1;
+      // Weighted average ROE and RAROC by exposure
+      existingSector.weightedROE = ((existingSector.weightedROE * (existingSector.totalExposure - loan.originalAmount)) + 
+                                   (loanROE * loan.originalAmount)) / existingSector.totalExposure;
+      existingSector.weightedRAROC = ((existingSector.weightedRAROC * (existingSector.totalExposure - loan.originalAmount)) + 
+                                     (loanRAROC * loan.originalAmount)) / existingSector.totalExposure;
+    } else {
+      acc.push({
+        sector: loan.sector,
+        totalEVA: loanEVA,
+        totalExposure: loan.originalAmount,
+        weightedROE: loanROE,
+        weightedRAROC: loanRAROC,
+        loanCount: 1
+      });
+    }
+    return acc;
+  }, [] as { sector: string; totalEVA: number; totalExposure: number; weightedROE: number; weightedRAROC: number; loanCount: number }[]);
+
+  // Performance vs targets data
+  const performanceVsTargets = [
+    {
+      metric: 'Portfolio ROE',
+      actual: portfolioMetrics.portfolioROE * 100,
+      target: defaultCalculationParameters.targetROE * 100,
+      status: portfolioMetrics.portfolioROE >= defaultCalculationParameters.targetROE ? 'above' : 'below'
+    },
+    {
+      metric: 'Portfolio RAROC', 
+      actual: portfolioMetrics.portfolioRAROC * 100,
+      target: defaultCalculationParameters.targetROE * 100, // Using same target for simplicity
+      status: portfolioMetrics.portfolioRAROC >= defaultCalculationParameters.targetROE ? 'above' : 'below'
+    },
+    {
+      metric: 'Risk-Adj. Return',
+      actual: (portfolioMetrics.portfolioROE / (portfolioMetrics.weightedAveragePD || 1)) * 100,
+      target: 100, // Example target of 100% risk-adjusted return
+      status: (portfolioMetrics.portfolioROE / (portfolioMetrics.weightedAveragePD || 1)) >= 1 ? 'above' : 'below'
+    }
   ];
   
   // Data for evolution of exposure, RWA, EL by quarter
@@ -145,7 +256,12 @@ const Dashboard = () => {
     { name: 'Q3 2023', exposure: 70000000, rwa: 38000000, el: 820000 },
     { name: 'Q4 2023', exposure: 72000000, rwa: 39500000, el: 850000 },
     { name: 'Q1 2024', exposure: 75000000, rwa: 41000000, el: 880000 },
-  ];
+  ].map(item => ({
+    ...item,
+    exposure: convertCurrency(item.exposure, currentCurrency, currentExchangeRate, eurToUsdRate),
+    rwa: convertCurrency(item.rwa, currentCurrency, currentExchangeRate, eurToUsdRate),
+    el: convertCurrency(item.el, currentCurrency, currentExchangeRate, eurToUsdRate)
+  }));
   
   // Data for Top 5 Loans by EVA chart
   const topLoansByEva = portfolio.loans
@@ -158,13 +274,11 @@ const Dashboard = () => {
       roe: (loan.metrics?.roe || 0) * 100
     }));
   
-  // Formatter to display amounts in euros
+  // Formatter to display amounts in selected currency
   const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-US', { 
-      style: 'currency', 
-      currency: 'EUR', 
-      maximumFractionDigits: 0 
-    }).format(value);
+    // Convert from EUR to selected currency if needed
+    const convertedValue = convertCurrency(value, currentCurrency, currentExchangeRate, eurToUsdRate);
+    return formatCurrencyUtil(convertedValue, currentCurrency, { maximumFractionDigits: 0 });
   };
   
   return (
@@ -262,7 +376,7 @@ const Dashboard = () => {
                           ))}
                         </Pie>
                         <Tooltip 
-                          formatter={(value: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(value)}
+                          formatter={(value: number) => formatCurrency(value)}
                         />
                         <Legend />
                       </PieChart>
@@ -283,7 +397,7 @@ const Dashboard = () => {
                         <XAxis dataKey="name" />
                         <YAxis yAxisId="left" orientation="left" />
                         <YAxis yAxisId="right" orientation="right" />
-                        <Tooltip formatter={(value: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(value)} />
+                        <Tooltip formatter={(value: number) => formatCurrency(value)} />
                         <Legend />
                         <Area type="monotone" dataKey="exposure" yAxisId="left" stroke="#2D5BFF" fill="#2D5BFF" fillOpacity={0.1} />
                         <Bar dataKey="rwa" yAxisId="left" barSize={20} fill="#00C48C" />
@@ -298,32 +412,113 @@ const Dashboard = () => {
           
           {/* Performance Tab */}
           <TabsContent value="performance" className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card className="financial-card">
               <CardHeader>
-                <CardTitle>EVA vs P&L</CardTitle>
+                  <CardTitle>Performance vs Targets</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={evaVsPnlData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                      <BarChart data={performanceVsTargets} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="name" />
+                        <XAxis dataKey="metric" />
                       <YAxis 
                         domain={[0, 'dataMax']}
-                        tickFormatter={(value) => {
-                          if (value === 0) return '0M';
-                          return `${(value / 1000000).toFixed(1)}M`;
-                        }}
+                          tickFormatter={(value) => `${value.toFixed(1)}%`}
                       />
-                      <Tooltip formatter={(value: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(value)} />
+                        <Tooltip formatter={(value: number) => `${value.toFixed(2)}%`} />
                       <Legend />
-                      <Bar dataKey="eva" fill="#2D5BFF" name="EVA" />
-                      <Bar dataKey="pnl" fill="#00C48C" name="P&L" />
+                        <Bar dataKey="actual" fill="#2D5BFF" name="Actual" />
+                        <Bar dataKey="target" fill="#00C48C" name="Target" />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </CardContent>
             </Card>
+              
+              <Card className="financial-card">
+                <CardHeader>
+                  <CardTitle>Performance by Sector</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={performanceBySector}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="sector" />
+                        <YAxis yAxisId="left" orientation="left" label={{ value: 'ROE/RAROC (%)', angle: -90, position: 'insideLeft' }} />
+                        <YAxis yAxisId="right" orientation="right" label={{ value: `EVA (${currentCurrency})`, angle: 90, position: 'insideRight' }} />
+                        <Tooltip formatter={(value: number, name: string) => [
+                          name === 'totalEVA' 
+                            ? formatCurrency(value)
+                            : `${value.toFixed(2)}%`,
+                          name === 'weightedROE' ? 'Weighted ROE' : name === 'weightedRAROC' ? 'Weighted RAROC' : 'Total EVA'
+                        ]} />
+                        <Legend />
+                        <Bar dataKey="weightedROE" yAxisId="left" fill="#2D5BFF" name="Weighted ROE (%)" />
+                        <Bar dataKey="weightedRAROC" yAxisId="left" fill="#00C48C" name="Weighted RAROC (%)" />
+                        <Line type="monotone" dataKey="totalEVA" yAxisId="right" stroke="#FF3B5B" name={`Total EVA (${currentCurrency})`} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+            
+            {/* Performance Summary Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card className="financial-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium flex items-center">
+                    <BadgePercent className="h-4 w-4 mr-1 text-financial-blue" />
+                    Risk-Adjusted Return
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    {((portfolioMetrics.portfolioROE / (portfolioMetrics.weightedAveragePD || 1)) * 100).toFixed(1)}%
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    ROE / Weighted Avg PD
+                  </p>
+                </CardContent>
+              </Card>
+              
+              <Card className="financial-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium flex items-center">
+                    <CreditCard className="h-4 w-4 mr-1 text-financial-green" />
+                    Capital Efficiency
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    {portfolioMetrics.totalRWA > 0 ? (portfolioMetrics.evaSumIntrinsic / portfolioMetrics.totalRWA * 100).toFixed(2) : '0.00'}%
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    EVA / RWA Ratio
+                  </p>
+                </CardContent>
+              </Card>
+              
+              <Card className="financial-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium flex items-center">
+                    <UserCheck className="h-4 w-4 mr-1 text-financial-yellow" />
+                    Diversification Score
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    {performanceBySector.length > 0 ? (100 / performanceBySector.length).toFixed(0) : '0'}%
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {performanceBySector.length} sectors
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
           
           {/* Risk Tab */}
@@ -346,17 +541,17 @@ const Dashboard = () => {
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="name" />
                       <YAxis yAxisId="left" orientation="left" label={{ value: 'PD/LGD (%)', angle: -90, position: 'insideLeft' }} />
-                      <YAxis yAxisId="right" orientation="right" label={{ value: 'Exposure (€)', angle: 90, position: 'insideRight' }} />
+                      <YAxis yAxisId="right" orientation="right" label={{ value: `Exposure (${currentCurrency})`, angle: 90, position: 'insideRight' }} />
                       <Tooltip formatter={(value: number, name: string) => [
                         name === 'exposure' 
-                          ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(value)
+                          ? formatCurrency(value)
                           : `${value.toFixed(2)}%`,
                         name === 'pd' ? 'PD' : name === 'lgd' ? 'LGD' : 'Exposure'
                       ]} />
                       <Legend />
                       <Bar dataKey="pd" yAxisId="left" fill="#FF3B5B" name="PD (%)" />
                       <Bar dataKey="lgd" yAxisId="left" fill="#FFB800" name="LGD (%)" />
-                      <Line type="monotone" dataKey="exposure" yAxisId="right" stroke="#2D5BFF" name="Exposure (€)" />
+                      <Line type="monotone" dataKey="exposure" yAxisId="right" stroke="#2D5BFF" name={`Exposure (${currentCurrency})`} />
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
@@ -376,11 +571,11 @@ const Dashboard = () => {
                     <BarChart data={topLoansByEva}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="name" />
-                      <YAxis yAxisId="left" orientation="left" label={{ value: 'EVA (€)', angle: -90, position: 'insideLeft' }} />
+                      <YAxis yAxisId="left" orientation="left" label={{ value: `EVA (${currentCurrency})`, angle: -90, position: 'insideLeft' }} />
                       <YAxis yAxisId="right" orientation="right" label={{ value: 'ROE (%)', angle: 90, position: 'insideRight' }} />
                       <Tooltip formatter={(value: number, name: string) => [
                         name === 'eva' 
-                          ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(value)
+                          ? formatCurrency(value)
                           : `${value.toFixed(2)}%`,
                         name === 'eva' ? 'EVA' : 'ROE'
                       ]} />

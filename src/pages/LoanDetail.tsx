@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -42,11 +42,14 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { sampleLoans, defaultCalculationParameters } from '../data/sampleData';
-import { Loan, CashFlow } from '../types/finance';
+import { Loan, CashFlow, Currency } from '../types/finance';
 import { calculateLoanMetrics } from '../utils/financialCalculations';
 import LoanDataService from '../services/LoanDataService';
 import ClientTemplateService from '../services/ClientTemplateService';
 import { toast } from '@/hooks/use-toast';
+import YieldCurve from '../components/loan/YieldCurve';
+import ParameterService from '@/services/ParameterService';
+import { formatCurrency as formatCurrencyUtil, convertCurrency } from '@/utils/currencyUtils';
 
 const LoanDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -55,9 +58,74 @@ const LoanDetail = () => {
   const [loan, setLoan] = useState<Loan | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   
+  // Currency state management
+  const [currentCurrency, setCurrentCurrency] = useState<Currency>('USD');
+  const [currentExchangeRate, setCurrentExchangeRate] = useState<number>(1.0);
+  const [eurToUsdRate, setEurToUsdRate] = useState<number>(1.0968); // EUR to USD rate
+  
   // Check if we are in edit mode (via query parameter)
   const searchParams = new URLSearchParams(location.search);
   const isEditMode = searchParams.get('edit') === 'true';
+  
+  // Load currency settings from parameters and fetch EUR rate
+  useEffect(() => {
+    const loadCurrencySettings = async () => {
+      const parameters = ParameterService.loadParameters();
+      if (parameters.currency) {
+        setCurrentCurrency(parameters.currency);
+      }
+      if (parameters.exchangeRate) {
+        setCurrentExchangeRate(parameters.exchangeRate);
+      }
+      
+      // Always fetch the EUR rate for conversion calculations
+      try {
+        const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+        if (response.ok) {
+          const data = await response.json();
+          const eurRate = data.rates?.EUR;
+          if (eurRate) {
+            setEurToUsdRate(eurRate);
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to fetch EUR rate, using fallback:', error);
+        setEurToUsdRate(0.9689); // Fallback EUR rate
+      }
+    };
+    
+    // Add event listener for parameter updates (including currency changes)
+    const handleParametersUpdated = async () => {
+      const parameters = ParameterService.loadParameters();
+      if (parameters.currency) {
+        setCurrentCurrency(parameters.currency);
+      }
+      if (parameters.exchangeRate) {
+        setCurrentExchangeRate(parameters.exchangeRate);
+      }
+      
+      // Refresh EUR rate when parameters are updated
+      try {
+        const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+        if (response.ok) {
+          const data = await response.json();
+          const eurRate = data.rates?.EUR;
+          if (eurRate) {
+            setEurToUsdRate(eurRate);
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to fetch EUR rate, using current value');
+      }
+    };
+    
+    loadCurrencySettings();
+    window.addEventListener('parameters-updated', handleParametersUpdated);
+    
+    return () => {
+      window.removeEventListener('parameters-updated', handleParametersUpdated);
+    };
+  }, []);
   
   useEffect(() => {
     if (!id) {
@@ -135,13 +203,11 @@ const LoanDetail = () => {
     );
   }
   
-  // Function to format amounts in euros
+  // Function to format amounts with dynamic currency conversion
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'EUR',
-      maximumFractionDigits: 0
-    }).format(amount);
+    // Convert from EUR to selected currency if needed
+    const convertedValue = convertCurrency(amount, currentCurrency, currentExchangeRate, eurToUsdRate);
+    return formatCurrencyUtil(convertedValue, currentCurrency, { maximumFractionDigits: 0 });
   };
   
   // Function to format percentages
@@ -369,10 +435,11 @@ const LoanDetail = () => {
       </div>
       
       <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList className="w-full grid grid-cols-2 md:grid-cols-5">
-                      <TabsTrigger value="overview">Overview</TabsTrigger>
+        <TabsList className="w-full grid grid-cols-3 md:grid-cols-6">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="details">Details</TabsTrigger>
           <TabsTrigger value="cashflows">Cash Flows</TabsTrigger>
+          <TabsTrigger value="yieldcurve">Yield Curve</TabsTrigger>
           <TabsTrigger value="metrics">Metrics</TabsTrigger>
           <TabsTrigger value="simulations">Simulations</TabsTrigger>
         </TabsList>
@@ -693,6 +760,20 @@ const LoanDetail = () => {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        
+        <TabsContent value="yieldcurve" className="space-y-6">
+          <Card className="financial-card">
+            <CardHeader>
+              <CardTitle>Loan Yield Curve Analysis</CardTitle>
+              <CardDescription>
+                Comprehensive yield curve showing effective yield evolution over the loan's lifetime
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <YieldCurve loan={loan} />
             </CardContent>
           </Card>
         </TabsContent>

@@ -46,11 +46,13 @@ import {
 } from 'lucide-react';
 import { defaultCalculationParameters } from '@/data/sampleData';
 import { calculatePortfolioMetrics, calculateLoanMetrics } from '@/utils/financialCalculations';
-import { Loan, PortfolioMetrics, PortfolioSummary } from '@/types/finance';
+import { Loan, PortfolioMetrics, PortfolioSummary, Currency } from '@/types/finance';
 import LoanDataService, { LOANS_UPDATED_EVENT } from '@/services/LoanDataService';
 import PortfolioService, { PORTFOLIOS_UPDATED_EVENT } from '@/services/PortfolioService';
 import { useNavigate } from 'react-router-dom';
 import { toast } from '@/hooks/use-toast';
+import ParameterService from '@/services/ParameterService';
+import { formatCurrency as formatCurrencyUtil, convertCurrency, CURRENCY_SYMBOLS } from '@/utils/currencyUtils';
 
 const COLORS = ['#00C48C', '#2D5BFF', '#FFB800', '#FF3B5B', '#1A2C42', '#9B87F5', '#7E69AB'];
 
@@ -76,6 +78,11 @@ const AnalyticsEva = () => {
     evaSumSale: 0,
     diversificationBenefit: 0
   });
+  
+  // Currency state management
+  const [currentCurrency, setCurrentCurrency] = useState<Currency>('USD');
+  const [currentExchangeRate, setCurrentExchangeRate] = useState<number>(1.0);
+  const [eurToUsdRate, setEurToUsdRate] = useState<number>(1.0968); // EUR to USD rate
 
   useEffect(() => {
     // Load data
@@ -95,6 +102,34 @@ const AnalyticsEva = () => {
       }
     }
     
+    // Load currency settings
+    const loadCurrencySettings = async () => {
+      const parameters = ParameterService.loadParameters();
+      if (parameters.currency) {
+        setCurrentCurrency(parameters.currency);
+      }
+      if (parameters.exchangeRate) {
+        setCurrentExchangeRate(parameters.exchangeRate);
+      }
+      
+      // Always fetch the EUR rate for conversion calculations
+      try {
+        const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+        if (response.ok) {
+          const data = await response.json();
+          const eurRate = data.rates?.EUR;
+          if (eurRate) {
+            setEurToUsdRate(eurRate);
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to fetch EUR rate, using fallback:', error);
+        setEurToUsdRate(0.9689); // Fallback EUR rate
+      }
+    };
+    
+    loadCurrencySettings();
+    
     // Add listeners
     const handlePortfoliosUpdated = () => {
       const updatedPortfolios = portfolioService.getPortfolioSummaries();
@@ -106,13 +141,40 @@ const AnalyticsEva = () => {
         loadLoansForPortfolio(selectedPortfolioId);
       }
     };
+
+    // Add event listener for parameter updates (including currency changes)
+    const handleParametersUpdated = async () => {
+      const parameters = ParameterService.loadParameters();
+      if (parameters.currency) {
+        setCurrentCurrency(parameters.currency);
+      }
+      if (parameters.exchangeRate) {
+        setCurrentExchangeRate(parameters.exchangeRate);
+      }
+      
+      // Refresh EUR rate when parameters are updated
+      try {
+        const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+        if (response.ok) {
+          const data = await response.json();
+          const eurRate = data.rates?.EUR;
+          if (eurRate) {
+            setEurToUsdRate(eurRate);
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to fetch EUR rate, using current value');
+      }
+    };
     
     window.addEventListener(PORTFOLIOS_UPDATED_EVENT, handlePortfoliosUpdated);
     window.addEventListener(LOANS_UPDATED_EVENT, handleLoansUpdated as EventListener);
+    window.addEventListener('parameters-updated', handleParametersUpdated);
     
     return () => {
       window.removeEventListener(PORTFOLIOS_UPDATED_EVENT, handlePortfoliosUpdated);
       window.removeEventListener(LOANS_UPDATED_EVENT, handleLoansUpdated as EventListener);
+      window.removeEventListener('parameters-updated', handleParametersUpdated);
     };
   }, []);
   
@@ -139,13 +201,17 @@ const AnalyticsEva = () => {
     setSelectedPortfolioId(portfolioId);
   };
 
-  // Format currency
-  const formatCurrency = (value: number, currency: string = 'EUR') => {
-    return new Intl.NumberFormat('en-US', { 
-      style: 'currency', 
-      currency: currency, 
-      maximumFractionDigits: 0 
-    }).format(value);
+  // Format currency with dynamic conversion
+  const formatCurrency = (value: number) => {
+    // Convert from EUR to selected currency if needed
+    const convertedValue = convertCurrency(value, currentCurrency, currentExchangeRate, eurToUsdRate);
+    return formatCurrencyUtil(convertedValue, currentCurrency, { maximumFractionDigits: 0 });
+  };
+  
+  // Get currency unit for charts (e.g., "M$", "M€", "MUSD", "MMAD")
+  const getCurrencyUnit = () => {
+    const symbol = CURRENCY_SYMBOLS[currentCurrency];
+    return symbol ? `M${symbol}` : `M${currentCurrency}`;
   };
 
   // Format percentage
@@ -380,15 +446,15 @@ const AnalyticsEva = () => {
               </CardContent>
             </Card>
             
-            <Card>
-              <CardHeader className="pb-2">
+        <Card>
+          <CardHeader className="pb-2">
                 <CardTitle className="text-lg flex items-center gap-2">
                   <Calculator className="h-5 w-5 text-blue-600" />
                   EVA per Loan
                 </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold">
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold">
                   {formatCurrency(portfolioMetrics.evaSumIntrinsic / loans.length)}
                 </div>
                 <div className="text-sm text-muted-foreground mt-1">
@@ -606,7 +672,7 @@ const AnalyticsEva = () => {
                           dataKey="z" 
                           range={[60, 400]} 
                           name="Exposure" 
-                          unit="M€" 
+                          unit={getCurrencyUnit()} 
                         />
                         <Tooltip 
                           cursor={{ strokeDasharray: '3 3' }}

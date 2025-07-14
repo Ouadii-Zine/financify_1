@@ -33,7 +33,7 @@ import LoanDataService from '../services/LoanDataService';
 import DynamicColumnsService, { DynamicColumn } from '../services/DynamicColumnsService';
 import PortfolioService, { PORTFOLIOS_UPDATED_EVENT } from '../services/PortfolioService';
 import { defaultCalculationParameters } from '../data/sampleData';
-import { Loan, Portfolio, PortfolioSummary, ClientType } from '../types/finance';
+import { Loan, Portfolio, PortfolioSummary, ClientType, LoanRatings, InternalRating, SPRating, MoodysRating, FitchRating } from '../types/finance';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { useNavigate } from 'react-router-dom';
@@ -307,7 +307,21 @@ const Import = () => {
           loan.currency = parsedValue || 'EUR';
           break;
         case 'internalRating':
-          loan.internalRating = parsedValue || 'BB';
+          loan.ratings = loan.ratings || {};
+          loan.ratings.internal = parsedValue || 'BB';
+          loan.internalRating = parsedValue || 'BB'; // Backward compatibility
+          break;
+        case 'spRating':
+          loan.ratings = loan.ratings || {};
+          loan.ratings.sp = parsedValue || 'N/A';
+          break;
+        case 'moodysRating':
+          loan.ratings = loan.ratings || {};
+          loan.ratings.moodys = parsedValue || 'N/A';
+          break;
+        case 'fitchRating':
+          loan.ratings = loan.ratings || {};
+          loan.ratings.fitch = parsedValue || 'N/A';
           break;
         case 'businessLine':
           loan.type = mapBusinessLineToLoanType(parsedValue) || 'term';
@@ -418,6 +432,16 @@ const Import = () => {
     }
 
     // Handle risk parameters - calculate from rating if not provided
+    // Initialize ratings structure if not set
+    if (!loan.ratings) {
+      loan.ratings = {};
+    }
+    
+    // If no ratings were provided in import, use internalRating for backward compatibility
+    if (!loan.ratings.internal && !loan.ratings.sp && !loan.ratings.moodys && !loan.ratings.fitch) {
+      loan.ratings.internal = loan.internalRating as InternalRating || 'BB';
+    }
+
     if (!loan.pd || loan.pd === 0) {
       // Calculate PD based on internal rating
       loan.pd = calculatePDFromRating(loan.internalRating);

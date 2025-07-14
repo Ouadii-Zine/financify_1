@@ -111,6 +111,32 @@ export const COLUMN_DEFINITIONS: Record<string, ColumnDefinition> = {
     required: false 
   },
 
+  // 🏆 RATING SYSTEMS (At least one required)
+  internalRating: { 
+    label: "Internal Rating", 
+    type: "select", 
+    options: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "AAA", "AA+", "AA", "AA-", "A+", "A", "A-", "BBB+", "BBB", "BBB-", "BB+", "BB", "BB-", "B+", "B", "B-", "CCC+", "CCC", "CCC-", "CC", "C", "D", "N/A"], 
+    required: false 
+  },
+  spRating: { 
+    label: "S&P Rating", 
+    type: "select", 
+    options: ["AAA", "AA+", "AA", "AA-", "A+", "A", "A-", "BBB+", "BBB", "BBB-", "BB+", "BB", "BB-", "B+", "B", "B-", "CCC+", "CCC", "CCC-", "CC", "C", "D", "N/A"], 
+    required: false 
+  },
+  moodysRating: { 
+    label: "Moody's Rating", 
+    type: "select", 
+    options: ["Aaa", "Aa1", "Aa2", "Aa3", "A1", "A2", "A3", "Baa1", "Baa2", "Baa3", "Ba1", "Ba2", "Ba3", "B1", "B2", "B3", "Caa1", "Caa2", "Caa3", "Ca", "C", "D", "N/A"], 
+    required: false 
+  },
+  fitchRating: { 
+    label: "Fitch Rating", 
+    type: "select", 
+    options: ["AAA", "AA+", "AA", "AA-", "A+", "A", "A-", "BBB+", "BBB", "BBB-", "BB+", "BB", "BB-", "B+", "B", "B-", "CCC+", "CCC", "CCC-", "CC", "C", "RD", "D", "N/A"], 
+    required: false 
+  },
+
   // 🔵 AUTOMATICALLY CALCULATED COLUMNS (Excel formulas converted)
   totalOutstanding: { 
     label: "Total Outstanding", 
@@ -212,12 +238,7 @@ export const COLUMN_DEFINITIONS: Record<string, ColumnDefinition> = {
     type: "text", 
     required: false 
   },
-  internalRating: { 
-    label: "Internal Rating of Borrower", 
-    type: "select", 
-    options: ["AAA", "AA", "A", "BBB", "BB", "B", "CCC"], 
-    required: false 
-  },
+
   trrRating: { 
     label: "TRR Rating of Borrower", 
     type: "text", 
@@ -273,10 +294,11 @@ export const CLIENT_CONFIGURATIONS: Record<string, ClientConfiguration> = {
     requiredFields: [
       "applicationCode", "facilityId", "dealId", "dealName", "asofDate", 
       "facilityDate", "maturity", "longNameBorrower", "rafBorrower", 
-      "currency", "originalAmount", "internalRating", "businessLine"
+      "currency", "originalAmount", "businessLine"
     ],
     optionalFields: [
       "outstandingAmount", "drawnAmount", "undrawnAmount", "ead", "pd", "lgd",
+      "internalRating", "spRating", "moodysRating", "fitchRating",
       "ufo", "placeOfBooking", "businessUnit", "trrRating", "watchList", 
       "loanMarginBps", "facilityFeeBps", "sector", "zoneGeographique"
     ],
@@ -441,7 +463,10 @@ class ClientTemplateService {
       facilityDate: ['facility_date', 'facility date', 'start_date', 'start date', 'origination_date'],
       maturity: ['maturity_date', 'maturity date', 'end_date', 'end date', 'expiry_date'],
       currency: ['ccy', 'curr', 'devise'],
-      internalRating: ['rating', 'internal_rating', 'internal rating', 'grade'],
+      internalRating: ['rating', 'internal_rating', 'internal rating', 'grade', 'internal rating of borrower'],
+      spRating: ['sp_rating', 'sp rating', 's&p_rating', 's&p rating', 'standard_poors', 'sp'],
+      moodysRating: ['moodys_rating', 'moodys rating', "moody's_rating", "moody's rating", 'moodys'],
+      fitchRating: ['fitch_rating', 'fitch rating', 'fitch'],
       businessLine: ['business_line', 'business line', 'line_of_business', 'lob'],
       originalAmount: ['original_amount', 'loan_amount', 'loan amount', 'amount', 'principal', 'facility_amount'],
       outstandingAmount: ['outstanding_amount', 'outstanding', 'balance', 'current_balance'],

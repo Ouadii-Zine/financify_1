@@ -239,7 +239,7 @@ export const generateTemplateDocumentation = (templateType: string): string => {
 
 // Function to generate reports - named export
 export const generateReport = (reportType: string, portfolio: Portfolio, format: string): { success: boolean; content?: string; filename?: string; message: string } => {
-  try {
+    try {
     const report = REPORT_TYPES.find(r => r.name.toLowerCase() === reportType.toLowerCase());
     if (!report) {
       return {
