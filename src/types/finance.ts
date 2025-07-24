@@ -150,7 +150,17 @@ export interface Loan {
   };
   margin: number; // Spread over reference rate (%)
   referenceRate: number; // Base rate (%)
-  
+
+  // --- NOUVEAUX PARAMÈTRES STRUCTURE CASHFLOW ---
+  interestPaymentFrequency?: 'monthly' | 'quarterly' | 'semiannual' | 'annual';
+  principalRepaymentFrequency?: 'monthly' | 'quarterly' | 'semiannual' | 'annual';
+  amortizationType?: 'inFine' | 'constant' | 'annuity';
+  interestCalculationMethod?: string; // ex: "30/360", "Actual/360", etc.
+  gracePeriodMonths?: number;
+  allowPrepayment?: boolean;
+  allowPenalty?: boolean;
+  // ------------------------------------------------
+
   // Multi-rating support
   ratings: LoanRatings;
   
@@ -167,7 +177,7 @@ export interface Loan {
 export interface CashFlow {
   id: string;
   date: string;
-  type: 'drawdown' | 'repayment' | 'interest' | 'fee';
+  type: 'drawdown' | 'repayment' | 'interest' | 'fee' | 'prepayment' | 'penalty' | 'capitalizedInterest' | 'default' | 'restructuring' | 'extension' | 'recovery' | 'netloss' | 'liquidity_crisis';
   amount: number;
   isManual: boolean; // Flag to identify manually entered cashflows
   description?: string;

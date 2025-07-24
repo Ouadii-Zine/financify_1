@@ -50,6 +50,7 @@ import { toast } from '@/hooks/use-toast';
 import YieldCurve from '../components/loan/YieldCurve';
 import ParameterService from '@/services/ParameterService';
 import { formatCurrency as formatCurrencyUtil, convertCurrency } from '@/utils/currencyUtils';
+import LoanCashflow from '@/components/loan/LoanCashflow';
 
 const LoanDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -295,17 +296,6 @@ const LoanDetail = () => {
   // Get template fields
   const templateFields = getTemplateFields();
   
-  // Prepare data for cash flows chart
-  const cashFlowChartData = [...loan.cashFlows]
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-    .map(cf => ({
-      date: new Date(cf.date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
-      amount: cf.type === 'drawdown' ? cf.amount : (cf.type === 'repayment' ? -cf.amount : 0),
-      interest: cf.type === 'interest' ? cf.amount : 0,
-      fee: cf.type === 'fee' ? cf.amount : 0,
-      isManual: cf.isManual,
-    }));
-  
   // Prepare data for EVA evolution chart
   const evaChartData = [
     { name: 'Base', eva: loan.metrics.evaIntrinsic },
@@ -315,6 +305,48 @@ const LoanDetail = () => {
     { name: '+5% LGD', eva: loan.metrics.evaIntrinsic * 0.88 }, // Simplified simulation
   ];
   
+  // Injecter des cash flows fictifs si le prêt n'en a pas (pour démo front-end)
+  let displayLoan = loan;
+  if (loan && (!loan.cashFlows || loan.cashFlows.length === 0)) {
+    displayLoan = {
+      ...loan,
+      cashFlows: [
+        {
+          id: 'demo-cf-1',
+          date: '2023-01-15',
+          type: 'drawdown',
+          amount: 1000000,
+          isManual: false,
+          description: 'Initial drawdown'
+        },
+        {
+          id: 'demo-cf-2',
+          date: '2023-07-15',
+          type: 'interest',
+          amount: 25000,
+          isManual: false,
+          description: 'Interest payment'
+        },
+        {
+          id: 'demo-cf-3',
+          date: '2024-01-15',
+          type: 'repayment',
+          amount: 200000,
+          isManual: true,
+          description: 'Partial repayment'
+        },
+        {
+          id: 'demo-cf-4',
+          date: '2024-07-15',
+          type: 'fee',
+          amount: 5000,
+          isManual: false,
+          description: 'Annual fee'
+        }
+      ]
+    };
+  }
+  
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -322,14 +354,14 @@ const LoanDetail = () => {
           <Button variant="ghost" size="icon" onClick={() => navigate('/loans')}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <h1 className="text-2xl font-bold">{loan.name}</h1>
-          <Badge className={`capitalize ${getLoanStatusColor(loan.status)}`}>
-            {loan.status}
+          <h1 className="text-2xl font-bold">{displayLoan.name}</h1>
+          <Badge className={`capitalize ${getLoanStatusColor(displayLoan.status)}`}>
+            {displayLoan.status}
           </Badge>
         </div>
         
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => navigate(`/loans/${loan.id}/edit`)}>
+          <Button variant="outline" onClick={() => navigate(`/loans/${displayLoan.id}/edit`)}>
             <Edit className="h-4 w-4 mr-2" />
             Edit
           </Button>
@@ -348,100 +380,107 @@ const LoanDetail = () => {
         </div>
       </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="financial-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg font-medium flex items-center">
-              <CreditCard className="h-5 w-5 mr-2 text-financial-blue" />
-              Original Amount
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {formatCurrency(loan.originalAmount)}
-            </div>
-            <p className="text-sm text-muted-foreground mt-1">
-              Drawn: {formatCurrency(loan.drawnAmount)}
-            </p>
-          </CardContent>
-        </Card>
-        
-        <Card className="financial-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg font-medium flex items-center">
-              <Calendar className="h-5 w-5 mr-2 text-financial-yellow" />
-              Period
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-semibold">
-              {formatDate(loan.startDate)}
-            </div>
-            <p className="text-sm text-muted-foreground mt-1">
-              until {formatDate(loan.endDate)}
-            </p>
-          </CardContent>
-        </Card>
-        
-        <Card className="financial-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg font-medium flex items-center">
-              <AlertTriangle className="h-5 w-5 mr-2 text-financial-red" />
-              Risk
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex justify-between">
-              <div>
-                <div className="text-sm text-muted-foreground">PD</div>
-                <div className="text-lg font-bold">{formatPercent(loan.pd)}</div>
+      {/* Replace the summary cards container with a full-width responsive grid */}
+      <div className="w-full px-4 md:px-8">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 w-full">
+          {/* Card 1: Original Amount */}
+          <Card className="financial-card">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg font-medium flex items-center">
+                <CreditCard className="h-5 w-5 mr-2 text-financial-blue" />
+                Original Amount
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {formatCurrency(displayLoan.originalAmount)}
               </div>
-              <div>
-                <div className="text-sm text-muted-foreground">LGD</div>
-                <div className="text-lg font-bold">{formatPercent(loan.lgd)}</div>
+              <p className="text-sm text-muted-foreground mt-1">
+                Drawn: {formatCurrency(displayLoan.drawnAmount)}
+              </p>
+            </CardContent>
+          </Card>
+          
+          {/* Card 2: Period */}
+          <Card className="financial-card">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg font-medium flex items-center">
+                <Calendar className="h-5 w-5 mr-2 text-financial-yellow" />
+                Period
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-xl font-semibold">
+                {formatDate(displayLoan.startDate)}
               </div>
-              <div>
-                <div className="text-sm text-muted-foreground">Rating</div>
-                <div className="text-lg font-bold">{loan.internalRating}</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card className="financial-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg font-medium flex items-center">
-              <BarChart3 className="h-5 w-5 mr-2 text-financial-green" />
-              Performance
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex justify-between">
-              <div>
-                <div className="text-sm text-muted-foreground">EVA</div>
-                <div className={`text-lg font-bold ${getValueColor(loan.metrics.evaIntrinsic)}`}>
-                  {formatCurrency(loan.metrics.evaIntrinsic)}
+              <p className="text-sm text-muted-foreground mt-1">
+                until {formatDate(displayLoan.endDate)}
+              </p>
+            </CardContent>
+          </Card>
+          
+          {/* Card 3: Risk */}
+          <Card className="financial-card">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg font-medium flex items-center">
+                <AlertTriangle className="h-5 w-5 mr-2 text-financial-red" />
+                Risk
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex justify-between">
+                <div>
+                  <div className="text-sm text-muted-foreground">PD</div>
+                  <div className="text-lg font-bold">{formatPercent(displayLoan.pd)}</div>
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground">LGD</div>
+                  <div className="text-lg font-bold">{formatPercent(displayLoan.lgd)}</div>
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground">Rating</div>
+                  <div className="text-lg font-bold">{displayLoan.internalRating}</div>
                 </div>
               </div>
-              <div>
-                <div className="text-sm text-muted-foreground">ROE</div>
-                <div className={`text-lg font-bold ${getValueColor(loan.metrics.roe, defaultCalculationParameters.targetROE)}`}>
-                  {formatPercent(loan.metrics.roe)}
+            </CardContent>
+          </Card>
+          
+          {/* Card 4: Performance */}
+          <Card className="financial-card">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg font-medium flex items-center">
+                <BarChart3 className="h-5 w-5 mr-2 text-financial-green" />
+                Performance
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex justify-between">
+                <div>
+                  <div className="text-sm text-muted-foreground">EVA</div>
+                  <div className={`text-lg font-bold ${getValueColor(displayLoan.metrics.evaIntrinsic)}`}>
+                    {formatCurrency(displayLoan.metrics.evaIntrinsic)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground">ROE</div>
+                  <div className={`text-lg font-bold ${getValueColor(displayLoan.metrics.roe, defaultCalculationParameters.targetROE)}`}>
+                    {formatPercent(displayLoan.metrics.roe)}
+                  </div>
                 </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
       </div>
       
       <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList className="w-full grid grid-cols-3 md:grid-cols-6">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="details">Details</TabsTrigger>
-          <TabsTrigger value="cashflows">Cash Flows</TabsTrigger>
-          <TabsTrigger value="yieldcurve">Yield Curve</TabsTrigger>
-          <TabsTrigger value="metrics">Metrics</TabsTrigger>
-          <TabsTrigger value="simulations">Simulations</TabsTrigger>
+        <TabsList className="w-full flex">
+          <TabsTrigger className="flex-1 text-center" value="overview">Overview</TabsTrigger>
+          <TabsTrigger className="flex-1 text-center" value="details">Details</TabsTrigger>
+          <TabsTrigger className="flex-1 text-center" value="cashflows-auto">Cash Flows</TabsTrigger>
+          <TabsTrigger className="flex-1 text-center" value="yieldcurve">Yield Curve</TabsTrigger>
+          <TabsTrigger className="flex-1 text-center" value="metrics">Metrics</TabsTrigger>
+          <TabsTrigger className="flex-1 text-center" value="simulations">Simulations</TabsTrigger>
         </TabsList>
         
         <TabsContent value="overview" className="space-y-6">
@@ -456,7 +495,7 @@ const LoanDetail = () => {
                     <p className="text-sm text-muted-foreground">Client</p>
                     <div className="flex items-center mt-1">
                       <User className="h-4 w-4 mr-2 text-financial-blue" />
-                      <span className="font-medium">{loan.clientName}</span>
+                      <span className="font-medium">{displayLoan.clientName}</span>
                     </div>
                   </div>
                   
@@ -464,7 +503,7 @@ const LoanDetail = () => {
                     <p className="text-sm text-muted-foreground">Sector</p>
                     <div className="flex items-center mt-1">
                       <Building className="h-4 w-4 mr-2 text-financial-blue" />
-                      <span className="font-medium">{loan.sector}</span>
+                      <span className="font-medium">{displayLoan.sector}</span>
                     </div>
                   </div>
                   
@@ -472,7 +511,7 @@ const LoanDetail = () => {
                     <p className="text-sm text-muted-foreground">Country</p>
                     <div className="flex items-center mt-1">
                       <MapPin className="h-4 w-4 mr-2 text-financial-blue" />
-                      <span className="font-medium">{loan.country}</span>
+                      <span className="font-medium">{displayLoan.country}</span>
                     </div>
                   </div>
                   
@@ -480,7 +519,7 @@ const LoanDetail = () => {
                     <p className="text-sm text-muted-foreground">Type</p>
                     <div className="flex items-center mt-1">
                       <CreditCard className="h-4 w-4 mr-2 text-financial-blue" />
-                      <span className="font-medium capitalize">{loan.type}</span>
+                      <span className="font-medium capitalize">{displayLoan.type}</span>
                     </div>
                   </div>
                   
@@ -488,7 +527,7 @@ const LoanDetail = () => {
                     <p className="text-sm text-muted-foreground">Currency</p>
                     <div className="flex items-center mt-1">
                       <DollarSign className="h-4 w-4 mr-2 text-financial-blue" />
-                      <span className="font-medium">{loan.currency}</span>
+                      <span className="font-medium">{displayLoan.currency}</span>
                     </div>
                   </div>
                   
@@ -496,7 +535,7 @@ const LoanDetail = () => {
                     <p className="text-sm text-muted-foreground">Rating</p>
                     <div className="flex items-center mt-1">
                       <TrendingUp className="h-4 w-4 mr-2 text-financial-blue" />
-                      <span className="font-medium">{loan.internalRating}</span>
+                      <span className="font-medium">{displayLoan.internalRating}</span>
                     </div>
                   </div>
                 </div>
@@ -508,19 +547,19 @@ const LoanDetail = () => {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <p className="text-sm">Original Amount</p>
-                      <p className="text-lg font-semibold">{formatCurrency(loan.originalAmount)}</p>
+                      <p className="text-lg font-semibold">{formatCurrency(displayLoan.originalAmount)}</p>
                     </div>
                     <div>
                       <p className="text-sm">Outstanding</p>
-                      <p className="text-lg font-semibold">{formatCurrency(loan.outstandingAmount)}</p>
+                      <p className="text-lg font-semibold">{formatCurrency(displayLoan.outstandingAmount)}</p>
                     </div>
                     <div>
                       <p className="text-sm">Drawn</p>
-                      <p className="text-lg font-semibold">{formatCurrency(loan.drawnAmount)}</p>
+                      <p className="text-lg font-semibold">{formatCurrency(displayLoan.drawnAmount)}</p>
                     </div>
                     <div>
                       <p className="text-sm">Undrawn</p>
-                      <p className="text-lg font-semibold">{formatCurrency(loan.undrawnAmount)}</p>
+                      <p className="text-lg font-semibold">{formatCurrency(displayLoan.undrawnAmount)}</p>
                     </div>
                   </div>
                 </div>
@@ -534,20 +573,13 @@ const LoanDetail = () => {
               <CardContent>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={cashFlowChartData}>
+                    <BarChart data={evaChartData}>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="date" />
+                      <XAxis dataKey="name" />
                       <YAxis />
-                      <Tooltip 
-                        formatter={(value: number) => [
-                          formatCurrency(value),
-                          value > 0 ? 'Drawdown' : value < 0 ? 'Repayment' : 'Interest/Fees'
-                        ]}
-                      />
+                      <Tooltip formatter={(value: number) => formatCurrency(value)} />
                       <Legend />
-                      <Bar dataKey="amount" name="Drawdown/Repayment" fill={loan.metrics.evaIntrinsic > 0 ? "#00C48C" : "#FF3B5B"} />
-                      <Bar dataKey="interest" name="Interest" fill="#FFB800" />
-                      <Bar dataKey="fee" name="Fees" fill="#2D5BFF" />
+                      <Bar dataKey="eva" name="EVA" fill="#2D5BFF" />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -563,57 +595,57 @@ const LoanDetail = () => {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                 <div>
                   <p className="text-sm text-muted-foreground">Intrinsic EVA</p>
-                  <p className={`text-2xl font-bold ${getValueColor(loan.metrics.evaIntrinsic)}`}>
-                    {formatCurrency(loan.metrics.evaIntrinsic)}
+                  <p className={`text-2xl font-bold ${getValueColor(displayLoan.metrics.evaIntrinsic)}`}>
+                    {formatCurrency(displayLoan.metrics.evaIntrinsic)}
                   </p>
                 </div>
                 
                 <div>
                   <p className="text-sm text-muted-foreground">Sale EVA</p>
-                  <p className={`text-2xl font-bold ${getValueColor(loan.metrics.evaSale)}`}>
-                    {formatCurrency(loan.metrics.evaSale)}
+                  <p className={`text-2xl font-bold ${getValueColor(displayLoan.metrics.evaSale)}`}>
+                    {formatCurrency(displayLoan.metrics.evaSale)}
                   </p>
                 </div>
                 
                 <div>
                   <p className="text-sm text-muted-foreground">Expected Loss</p>
                   <p className="text-2xl font-bold text-financial-red">
-                    {formatCurrency(loan.metrics.expectedLoss)}
+                    {formatCurrency(displayLoan.metrics.expectedLoss)}
                   </p>
                 </div>
                 
                 <div>
                   <p className="text-sm text-muted-foreground">RWA</p>
                   <p className="text-2xl font-bold">
-                    {formatCurrency(loan.metrics.rwa)}
+                    {formatCurrency(displayLoan.metrics.rwa)}
                   </p>
                 </div>
                 
                 <div>
                   <p className="text-sm text-muted-foreground">ROE</p>
-                  <p className={`text-2xl font-bold ${getValueColor(loan.metrics.roe, defaultCalculationParameters.targetROE)}`}>
-                    {formatPercent(loan.metrics.roe)}
+                  <p className={`text-2xl font-bold ${getValueColor(displayLoan.metrics.roe, defaultCalculationParameters.targetROE)}`}>
+                    {formatPercent(displayLoan.metrics.roe)}
                   </p>
                 </div>
                 
                 <div>
                   <p className="text-sm text-muted-foreground">RAROC</p>
-                  <p className={`text-2xl font-bold ${getValueColor(loan.metrics.raroc, defaultCalculationParameters.targetROE)}`}>
-                    {formatPercent(loan.metrics.raroc)}
+                  <p className={`text-2xl font-bold ${getValueColor(displayLoan.metrics.raroc, defaultCalculationParameters.targetROE)}`}>
+                    {formatPercent(displayLoan.metrics.raroc)}
                   </p>
                 </div>
                 
                 <div>
                   <p className="text-sm text-muted-foreground">Capital Consumption</p>
                   <p className="text-2xl font-bold">
-                    {formatCurrency(loan.metrics.capitalConsumption)}
+                    {formatCurrency(displayLoan.metrics.capitalConsumption)}
                   </p>
                 </div>
                 
                 <div>
                   <p className="text-sm text-muted-foreground">Net Margin</p>
-                  <p className={`text-2xl font-bold ${getValueColor(loan.metrics.netMargin)}`}>
-                    {formatPercent(loan.metrics.netMargin)}
+                  <p className={`text-2xl font-bold ${getValueColor(displayLoan.metrics.netMargin)}`}>
+                    {formatPercent(displayLoan.metrics.netMargin)}
                   </p>
                 </div>
               </div>
@@ -626,9 +658,9 @@ const LoanDetail = () => {
             <CardHeader>
               <CardTitle>
                 Loan Details
-                {loan.clientType && (
+                {displayLoan.clientType && (
                   <span className="text-sm font-normal text-muted-foreground ml-2">
-                    ({loan.clientType} Template Fields)
+                    ({displayLoan.clientType} Template Fields)
                   </span>
                 )}
               </CardTitle>
@@ -639,7 +671,7 @@ const LoanDetail = () => {
                   {Object.entries(templateFields).map(([key, value]) => {
                                          // Get template field info for better labeling
                      const templateService = ClientTemplateService.getInstance();
-                     const clientConfig = templateService.getClientConfiguration(loan.clientType!);
+                     const clientConfig = templateService.getClientConfiguration(displayLoan.clientType!);
                      const fieldInfo = templateService.getColumnDefinition(key);
                      const displayLabel = fieldInfo?.label || key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ');
                     
@@ -680,7 +712,7 @@ const LoanDetail = () => {
                 <div className="text-center py-8">
                   <p className="text-muted-foreground">
                     No template fields available for this loan.
-                    {!loan.clientType && " Client type not specified."}
+                    {!displayLoan.clientType && " Client type not specified."}
                   </p>
                 </div>
               )}
@@ -690,78 +722,8 @@ const LoanDetail = () => {
 
         </TabsContent>
         
-        <TabsContent value="cashflows" className="space-y-6">
-          <Card className="financial-card">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Cash Flows</CardTitle>
-              <Button size="sm">Add manual flow</Button>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead>Source</TableHead>
-                    <TableHead>Description</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loan.cashFlows
-                    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-                    .map((cf: CashFlow) => (
-                      <TableRow key={cf.id}>
-                        <TableCell>{formatDate(cf.date)}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="capitalize">
-                            {cf.type}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right font-medium">
-                          {formatCurrency(cf.amount)}
-                        </TableCell>
-                        <TableCell>
-                          {cf.isManual ? (
-                            <Badge className="bg-financial-yellow text-financial-navy">Manual</Badge>
-                          ) : (
-                            <Badge variant="outline">Automatic</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>{cf.description || '-'}</TableCell>
-                      </TableRow>
-                    ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-          
-          <Card className="financial-card">
-            <CardHeader>
-              <CardTitle>Flows Evolution</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={cashFlowChartData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <Tooltip 
-                      formatter={(value: number) => [
-                        formatCurrency(value),
-                        value > 0 ? 'Drawdown' : value < 0 ? 'Repayment' : 'Interest/Fees'
-                      ]}
-                    />
-                    <Legend />
-                    <Bar dataKey="amount" name="Drawdown/Repayment" fill={loan.metrics.evaIntrinsic > 0 ? "#00C48C" : "#FF3B5B"} />
-                    <Bar dataKey="interest" name="Interest" fill="#FFB800" />
-                    <Bar dataKey="fee" name="Fees" fill="#2D5BFF" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
+        <TabsContent value="cashflows-auto" className="space-y-6">
+          <LoanCashflow />
         </TabsContent>
         
         <TabsContent value="yieldcurve" className="space-y-6">
@@ -773,7 +735,7 @@ const LoanDetail = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <YieldCurve loan={loan} />
+              <YieldCurve loan={displayLoan} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -789,22 +751,22 @@ const LoanDetail = () => {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <p className="text-sm text-muted-foreground">Intrinsic EVA</p>
-                      <p className={`text-2xl font-bold ${getValueColor(loan.metrics.evaIntrinsic)}`}>
-                        {formatCurrency(loan.metrics.evaIntrinsic)}
+                      <p className={`text-2xl font-bold ${getValueColor(displayLoan.metrics.evaIntrinsic)}`}>
+                        {formatCurrency(displayLoan.metrics.evaIntrinsic)}
                       </p>
                     </div>
                     
                     <div>
                       <p className="text-sm text-muted-foreground">Sale EVA</p>
-                      <p className={`text-2xl font-bold ${getValueColor(loan.metrics.evaSale)}`}>
-                        {formatCurrency(loan.metrics.evaSale)}
+                      <p className={`text-2xl font-bold ${getValueColor(displayLoan.metrics.evaSale)}`}>
+                        {formatCurrency(displayLoan.metrics.evaSale)}
                       </p>
                     </div>
                     
                     <div>
                       <p className="text-sm text-muted-foreground">ROE</p>
-                      <p className={`text-2xl font-bold ${getValueColor(loan.metrics.roe, defaultCalculationParameters.targetROE)}`}>
-                        {formatPercent(loan.metrics.roe)}
+                      <p className={`text-2xl font-bold ${getValueColor(displayLoan.metrics.roe, defaultCalculationParameters.targetROE)}`}>
+                        {formatPercent(displayLoan.metrics.roe)}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         vs target: {formatPercent(defaultCalculationParameters.targetROE)}
@@ -813,22 +775,22 @@ const LoanDetail = () => {
                     
                     <div>
                       <p className="text-sm text-muted-foreground">RAROC</p>
-                      <p className={`text-2xl font-bold ${getValueColor(loan.metrics.raroc, defaultCalculationParameters.targetROE)}`}>
-                        {formatPercent(loan.metrics.raroc)}
+                      <p className={`text-2xl font-bold ${getValueColor(displayLoan.metrics.raroc, defaultCalculationParameters.targetROE)}`}>
+                        {formatPercent(displayLoan.metrics.raroc)}
                       </p>
                     </div>
                     
                     <div>
                       <p className="text-sm text-muted-foreground">Net Margin</p>
-                      <p className={`text-2xl font-bold ${getValueColor(loan.metrics.netMargin)}`}>
-                        {formatPercent(loan.metrics.netMargin)}
+                      <p className={`text-2xl font-bold ${getValueColor(displayLoan.metrics.netMargin)}`}>
+                        {formatPercent(displayLoan.metrics.netMargin)}
                       </p>
                     </div>
                     
                     <div>
                       <p className="text-sm text-muted-foreground">Effective Yield</p>
                       <p className="text-2xl font-bold">
-                        {formatPercent(loan.metrics.effectiveYield)}
+                        {formatPercent(displayLoan.metrics.effectiveYield)}
                       </p>
                     </div>
                   </div>
@@ -846,48 +808,48 @@ const LoanDetail = () => {
                     <div>
                       <p className="text-sm text-muted-foreground">Expected Loss (EL)</p>
                       <p className="text-2xl font-bold text-financial-red">
-                        {formatCurrency(loan.metrics.expectedLoss)}
+                        {formatCurrency(displayLoan.metrics.expectedLoss)}
                       </p>
                     </div>
                     
                     <div>
                       <p className="text-sm text-muted-foreground">Risk-Weighted Assets (RWA)</p>
                       <p className="text-2xl font-bold">
-                        {formatCurrency(loan.metrics.rwa)}
+                        {formatCurrency(displayLoan.metrics.rwa)}
                       </p>
                     </div>
                     
                     <div>
                       <p className="text-sm text-muted-foreground">Capital Consumption</p>
                       <p className="text-2xl font-bold">
-                        {formatCurrency(loan.metrics.capitalConsumption)}
+                        {formatCurrency(displayLoan.metrics.capitalConsumption)}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {formatPercent(loan.metrics.capitalConsumption / loan.originalAmount)} of exposure
+                        {formatPercent(displayLoan.metrics.capitalConsumption / displayLoan.originalAmount)} of exposure
                       </p>
                     </div>
                     
                     <div>
                       <p className="text-sm text-muted-foreground">Cost of Risk</p>
                       <p className="text-2xl font-bold text-financial-red">
-                        {formatPercent(loan.metrics.costOfRisk)}
+                        {formatPercent(displayLoan.metrics.costOfRisk)}
                       </p>
                     </div>
                     
                     <div>
                       <p className="text-sm text-muted-foreground">PD</p>
                       <p className="text-2xl font-bold">
-                        {formatPercent(loan.pd)}
+                        {formatPercent(displayLoan.pd)}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        Rating: {loan.internalRating}
+                        Rating: {displayLoan.internalRating}
                       </p>
                     </div>
                     
                     <div>
                       <p className="text-sm text-muted-foreground">LGD</p>
                       <p className="text-2xl font-bold">
-                        {formatPercent(loan.lgd)}
+                        {formatPercent(displayLoan.lgd)}
                       </p>
                     </div>
                   </div>
@@ -933,7 +895,7 @@ const LoanDetail = () => {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Cost of Risk</span>
-                      <span className="font-medium">{formatPercent(loan.metrics.costOfRisk)}</span>
+                      <span className="font-medium">{formatPercent(displayLoan.metrics.costOfRisk)}</span>
                     </div>
                   </div>
                 </div>
@@ -943,15 +905,15 @@ const LoanDetail = () => {
                   <div className="space-y-2">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Margin</span>
-                      <span className="font-medium">{formatPercent(loan.margin)}</span>
+                      <span className="font-medium">{formatPercent(displayLoan.margin)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Reference Rate</span>
-                      <span className="font-medium">{formatPercent(loan.referenceRate)}</span>
+                      <span className="font-medium">{formatPercent(displayLoan.referenceRate)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">All-in Rate</span>
-                      <span className="font-medium">{formatPercent(loan.margin + loan.referenceRate)}</span>
+                      <span className="font-medium">{formatPercent(displayLoan.margin + displayLoan.referenceRate)}</span>
                     </div>
                   </div>
                 </div>
@@ -995,46 +957,46 @@ const LoanDetail = () => {
                   <TableBody>
                     <TableRow>
                       <TableCell className="font-medium">Base</TableCell>
-                      <TableCell className="text-right">{formatCurrency(loan.metrics.evaIntrinsic)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(displayLoan.metrics.evaIntrinsic)}</TableCell>
                       <TableCell className="text-right">-</TableCell>
-                      <TableCell className="text-right">{formatPercent(loan.metrics.roe)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(loan.metrics.rwa)}</TableCell>
+                      <TableCell className="text-right">{formatPercent(displayLoan.metrics.roe)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(displayLoan.metrics.rwa)}</TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell className="font-medium">PD +1%</TableCell>
-                      <TableCell className="text-right">{formatCurrency(loan.metrics.evaIntrinsic * 0.9)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(displayLoan.metrics.evaIntrinsic * 0.9)}</TableCell>
                       <TableCell className="text-right text-financial-red">
-                        {formatCurrency(loan.metrics.evaIntrinsic * 0.9 - loan.metrics.evaIntrinsic)}
+                        {formatCurrency(displayLoan.metrics.evaIntrinsic * 0.9 - displayLoan.metrics.evaIntrinsic)}
                       </TableCell>
-                      <TableCell className="text-right">{formatPercent(loan.metrics.roe * 0.9)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(loan.metrics.rwa * 1.1)}</TableCell>
+                      <TableCell className="text-right">{formatPercent(displayLoan.metrics.roe * 0.9)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(displayLoan.metrics.rwa * 1.1)}</TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell className="font-medium">Rate +1%</TableCell>
-                      <TableCell className="text-right">{formatCurrency(loan.metrics.evaIntrinsic * 0.85)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(displayLoan.metrics.evaIntrinsic * 0.85)}</TableCell>
                       <TableCell className="text-right text-financial-red">
-                        {formatCurrency(loan.metrics.evaIntrinsic * 0.85 - loan.metrics.evaIntrinsic)}
+                        {formatCurrency(displayLoan.metrics.evaIntrinsic * 0.85 - displayLoan.metrics.evaIntrinsic)}
                       </TableCell>
-                      <TableCell className="text-right">{formatPercent(loan.metrics.roe * 0.85)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(loan.metrics.rwa)}</TableCell>
+                      <TableCell className="text-right">{formatPercent(displayLoan.metrics.roe * 0.85)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(displayLoan.metrics.rwa)}</TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell className="font-medium">Spread +1%</TableCell>
-                      <TableCell className="text-right">{formatCurrency(loan.metrics.evaIntrinsic * 1.15)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(displayLoan.metrics.evaIntrinsic * 1.15)}</TableCell>
                       <TableCell className="text-right text-financial-green">
-                        {formatCurrency(loan.metrics.evaIntrinsic * 1.15 - loan.metrics.evaIntrinsic)}
+                        {formatCurrency(displayLoan.metrics.evaIntrinsic * 1.15 - displayLoan.metrics.evaIntrinsic)}
                       </TableCell>
-                      <TableCell className="text-right">{formatPercent(loan.metrics.roe * 1.15)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(loan.metrics.rwa)}</TableCell>
+                      <TableCell className="text-right">{formatPercent(displayLoan.metrics.roe * 1.15)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(displayLoan.metrics.rwa)}</TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell className="font-medium">LGD +5%</TableCell>
-                      <TableCell className="text-right">{formatCurrency(loan.metrics.evaIntrinsic * 0.88)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(displayLoan.metrics.evaIntrinsic * 0.88)}</TableCell>
                       <TableCell className="text-right text-financial-red">
-                        {formatCurrency(loan.metrics.evaIntrinsic * 0.88 - loan.metrics.evaIntrinsic)}
+                        {formatCurrency(displayLoan.metrics.evaIntrinsic * 0.88 - displayLoan.metrics.evaIntrinsic)}
                       </TableCell>
-                      <TableCell className="text-right">{formatPercent(loan.metrics.roe * 0.88)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(loan.metrics.rwa * 1.05)}</TableCell>
+                      <TableCell className="text-right">{formatPercent(displayLoan.metrics.roe * 0.88)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(displayLoan.metrics.rwa * 1.05)}</TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>

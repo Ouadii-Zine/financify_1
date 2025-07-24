@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
@@ -17,16 +17,88 @@ import {
 } from 'recharts';
 import { TrendingUp } from 'lucide-react';
 import { samplePortfolio, defaultCalculationParameters } from '@/data/sampleData';
-import { calculatePortfolioMetrics } from '@/utils/financialCalculations';
+import { calculatePortfolioMetrics, calculateLoanMetrics } from '@/utils/financialCalculations';
+import ParameterService from '@/services/ParameterService';
+import { formatCurrency as formatCurrencyUtil, convertCurrency, CURRENCY_SYMBOLS } from '@/utils/currencyUtils';
+import { Currency } from '@/types/finance';
 
 const AnalyticsPerformance = () => {
+  // Ajout de la gestion de la devise
+  const [currentCurrency, setCurrentCurrency] = useState<Currency>('USD');
+  const [currentExchangeRate, setCurrentExchangeRate] = useState<number>(1.0);
+  const [eurToUsdRate, setEurToUsdRate] = useState<number>(1.0968);
+
+  useEffect(() => {
+    // Charger la configuration de la devise
+    const loadCurrencySettings = async () => {
+      const parameters = ParameterService.loadParameters();
+      if (parameters.currency) {
+        setCurrentCurrency(parameters.currency);
+      }
+      if (parameters.exchangeRate) {
+        setCurrentExchangeRate(parameters.exchangeRate);
+      }
+      // Toujours récupérer le taux EUR pour la conversion
+      try {
+        const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+        if (response.ok) {
+          const data = await response.json();
+          const eurRate = data.rates?.EUR;
+          if (eurRate) {
+            setEurToUsdRate(eurRate);
+          }
+        }
+      } catch (error) {
+        setEurToUsdRate(0.9689);
+      }
+    };
+    loadCurrencySettings();
+    // Écouter les changements de paramètres
+    const handleParametersUpdated = async () => {
+      const parameters = ParameterService.loadParameters();
+      if (parameters.currency) {
+        setCurrentCurrency(parameters.currency);
+      }
+      if (parameters.exchangeRate) {
+        setCurrentExchangeRate(parameters.exchangeRate);
+      }
+      // Mettre à jour le taux EUR
+      try {
+        const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+        if (response.ok) {
+          const data = await response.json();
+          const eurRate = data.rates?.EUR;
+          if (eurRate) {
+            setEurToUsdRate(eurRate);
+          }
+        }
+      } catch (error) {}
+    };
+    window.addEventListener('parameters-updated', handleParametersUpdated);
+    return () => {
+      window.removeEventListener('parameters-updated', handleParametersUpdated);
+    };
+  }, []);
+
+  // Fonction utilitaire pour formater la devise
+  const formatCurrency = (value) => {
+    const convertedValue = convertCurrency(value, currentCurrency, currentExchangeRate, eurToUsdRate);
+    return formatCurrencyUtil(convertedValue, currentCurrency, { maximumFractionDigits: 0 });
+  };
+
+  // Recalculer les métriques pour chaque prêt du samplePortfolio
+  const loansWithMetrics = samplePortfolio.loans.map(loan => ({
+    ...loan,
+    metrics: calculateLoanMetrics(loan, defaultCalculationParameters)
+  }));
+
   const portfolioMetrics = calculatePortfolioMetrics(
-    samplePortfolio.loans, 
+    loansWithMetrics,
     defaultCalculationParameters
   );
   
   // Top 5 loans by ROE
-  const topLoansByROE = [...samplePortfolio.loans]
+  const topLoansByROE = [...loansWithMetrics]
     .sort((a, b) => b.metrics.roe - a.metrics.roe)
     .slice(0, 5)
     .map(loan => ({
@@ -45,7 +117,7 @@ const AnalyticsPerformance = () => {
   ];
   
   // Data for margin chart (simulated data)
-  const marginAnalysisData = samplePortfolio.loans.map(loan => ({
+  const marginAnalysisData = loansWithMetrics.map(loan => ({
     name: loan.name.substring(0, 15) + (loan.name.length > 15 ? '...' : ''),
     margin: loan.margin * 100,
     netMargin: loan.metrics.netMargin * 100,
@@ -91,11 +163,7 @@ const AnalyticsPerformance = () => {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">
-              {new Intl.NumberFormat('fr-FR', { 
-                style: 'currency', 
-                currency: 'EUR', 
-                maximumFractionDigits: 0 
-              }).format(portfolioMetrics.totalRWA * defaultCalculationParameters.capitalRatio)}
+              {formatCurrency(portfolioMetrics.totalRWA * defaultCalculationParameters.capitalRatio)}
             </div>
             <p className="text-sm text-muted-foreground mt-1">
               {(portfolioMetrics.totalRWA * defaultCalculationParameters.capitalRatio / portfolioMetrics.totalExposure * 100).toFixed(2)}% of exposure

@@ -14,6 +14,7 @@ import LoanDataService from '@/services/LoanDataService';
 import PortfolioService, { PORTFOLIOS_UPDATED_EVENT } from '@/services/PortfolioService';
 import ClientTemplateService from '@/services/ClientTemplateService';
 import ParameterService from '@/services/ParameterService';
+import { Switch } from '@/components/ui/switch';
 
 interface LoanFormData {
   id?: string;
@@ -48,6 +49,15 @@ interface LoanFormData {
   commitmentFee?: string;
   agencyFee?: string;
   otherFee?: string;
+  // --- NOUVEAUX CHAMPS STRUCTURE CASHFLOW ---
+  interestPaymentFrequency?: 'monthly' | 'quarterly' | 'semiannual' | 'annual';
+  principalRepaymentFrequency?: 'monthly' | 'quarterly' | 'semiannual' | 'annual';
+  amortizationType?: 'inFine' | 'constant' | 'annuity';
+  interestCalculationMethod?: string;
+  gracePeriodMonths?: string;
+  allowPrepayment?: boolean;
+  allowPenalty?: boolean;
+  // ------------------------------------------------
 }
 
 const LoanNew = () => {
@@ -123,7 +133,16 @@ const LoanNew = () => {
     upfrontFee: '0',
     commitmentFee: '0',
     agencyFee: '0',
-    otherFee: '0'
+    otherFee: '0',
+    // --- NOUVEAUX CHAMPS STRUCTURE CASHFLOW ---
+    interestPaymentFrequency: 'annual',
+    principalRepaymentFrequency: 'annual',
+    amortizationType: 'inFine',
+    interestCalculationMethod: 'Mois de 30 jours/Année de 360 jours',
+    gracePeriodMonths: '0',
+    allowPrepayment: false,
+    allowPenalty: false
+    // ------------------------------------------------
   };
   
   const [formData, setFormData] = useState<LoanFormData>(defaultFormData);
@@ -196,7 +215,16 @@ const LoanNew = () => {
             upfrontFee: loanToEdit.fees.upfront.toString(),
             commitmentFee: loanToEdit.fees.commitment.toString(),
             agencyFee: loanToEdit.fees.agency.toString(),
-            otherFee: loanToEdit.fees.other.toString()
+            otherFee: loanToEdit.fees.other.toString(),
+            // --- NOUVEAUX CHAMPS STRUCTURE CASHFLOW ---
+            interestPaymentFrequency: loanToEdit.interestPaymentFrequency,
+            principalRepaymentFrequency: loanToEdit.principalRepaymentFrequency,
+            amortizationType: loanToEdit.amortizationType,
+            interestCalculationMethod: loanToEdit.interestCalculationMethod,
+            gracePeriodMonths: loanToEdit.gracePeriodMonths.toString(),
+            allowPrepayment: loanToEdit.allowPrepayment,
+            allowPenalty: loanToEdit.allowPenalty
+            // ------------------------------------------------
           });
         } else {
           toast({
@@ -318,7 +346,16 @@ const LoanNew = () => {
           capitalConsumption: 0,
           netMargin: 0,
           effectiveYield: 0
-        }
+        },
+        // --- NOUVEAUX CHAMPS STRUCTURE CASHFLOW ---
+        interestPaymentFrequency: formData.interestPaymentFrequency,
+        principalRepaymentFrequency: formData.principalRepaymentFrequency,
+        amortizationType: formData.amortizationType,
+        interestCalculationMethod: formData.interestCalculationMethod,
+        gracePeriodMonths: formData.gracePeriodMonths ? parseInt(formData.gracePeriodMonths) : 0,
+        allowPrepayment: !!formData.allowPrepayment,
+        allowPenalty: !!formData.allowPenalty
+        // ------------------------------------------------
       };
       
       if (isEditMode && formData.id) {
@@ -875,6 +912,122 @@ const LoanNew = () => {
                   onChange={handleInputChange} 
                   placeholder="0" 
                 />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Cash Flow Structure</CardTitle>
+            <CardDescription>
+              Amortization and payment parameters for the loan
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="interestPaymentFrequency">Interest Payment Frequency</Label>
+                <Select
+                  value={formData.interestPaymentFrequency}
+                  onValueChange={value => handleSelectChange('interestPaymentFrequency', value)}
+                >
+                  <SelectTrigger id="interestPaymentFrequency">
+                    <SelectValue placeholder="Select" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="monthly">Monthly</SelectItem>
+                    <SelectItem value="quarterly">Quarterly</SelectItem>
+                    <SelectItem value="semiannual">Semiannual</SelectItem>
+                    <SelectItem value="annual">Annual</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="principalRepaymentFrequency">Principal Repayment Frequency</Label>
+                <Select
+                  value={formData.principalRepaymentFrequency}
+                  onValueChange={value => handleSelectChange('principalRepaymentFrequency', value)}
+                >
+                  <SelectTrigger id="principalRepaymentFrequency">
+                    <SelectValue placeholder="Select" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="monthly">Monthly</SelectItem>
+                    <SelectItem value="quarterly">Quarterly</SelectItem>
+                    <SelectItem value="semiannual">Semiannual</SelectItem>
+                    <SelectItem value="annual">Annual</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="amortizationType">Amortization Type</Label>
+                <Select
+                  value={formData.amortizationType}
+                  onValueChange={value => handleSelectChange('amortizationType', value)}
+                >
+                  <SelectTrigger id="amortizationType">
+                    <SelectValue placeholder="Select" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="inFine">Bullet</SelectItem>
+                    <SelectItem value="constant">Constant</SelectItem>
+                    <SelectItem value="annuity">Annuity</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="interestCalculationMethod">Interest Calculation Method</Label>
+                <Select
+                  value={formData.interestCalculationMethod}
+                  onValueChange={value => handleSelectChange('interestCalculationMethod', value)}
+                >
+                  <SelectTrigger id="interestCalculationMethod">
+                    <SelectValue placeholder="Select" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Mois de 30 jours/Année de 360 jours">30/360</SelectItem>
+                    <SelectItem value="Nombre de jours réel / Nombre de jours réel">Actual/Actual</SelectItem>
+                    <SelectItem value="BOND">Bond</SelectItem>
+                    <SelectItem value="Nombre de jours réel/Année de 360 jours">Actual/360</SelectItem>
+                    <SelectItem value="Mois de 30 jours/Année de 365 jours">30/365</SelectItem>
+                    <SelectItem value="Nombre de jours réel/Année de 365 jours">Actual/365</SelectItem>
+                    <SelectItem value="BANK">BANK</SelectItem>
+                    <SelectItem value="G365">G365</SelectItem>
+                    <SelectItem value="G5/6">G5/6</SelectItem>
+                    <SelectItem value="M30">M30</SelectItem>
+                    <SelectItem value="M30E">M30E</SelectItem>
+                    <SelectItem value="n/a">n/a</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="gracePeriodMonths">Grace Period (months)</Label>
+                <Input
+                  id="gracePeriodMonths"
+                  name="gracePeriodMonths"
+                  type="number"
+                  min="0"
+                  value={formData.gracePeriodMonths}
+                  onChange={handleInputChange}
+                  placeholder="0"
+                />
+              </div>
+              <div className="flex items-center space-x-2 mt-6">
+                <Switch
+                  id="allowPrepayment"
+                  checked={!!formData.allowPrepayment}
+                  onCheckedChange={checked => setFormData(prev => ({ ...prev, allowPrepayment: checked }))}
+                />
+                <Label htmlFor="allowPrepayment">Allow prepayments</Label>
+              </div>
+              <div className="flex items-center space-x-2 mt-6">
+                <Switch
+                  id="allowPenalty"
+                  checked={!!formData.allowPenalty}
+                  onCheckedChange={checked => setFormData(prev => ({ ...prev, allowPenalty: checked }))}
+                />
+                <Label htmlFor="allowPenalty">Allow penalties</Label>
               </div>
             </div>
           </CardContent>
