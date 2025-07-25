@@ -164,3 +164,38 @@ export const formatPercentage = (
     minimumFractionDigits
   }).format(value / 100);
 }; 
+
+/**
+ * Convert amount from any currency to any other using USD-based exchange rates
+ * rates: { USD: 1, EUR: 0.97, ... } (1 USD = X target_currency)
+ * eurToUsdRate: 1 EUR = X USD
+ */
+export const convertBetweenCurrencies = (
+  amount: number,
+  fromCurrency: Currency,
+  toCurrency: Currency,
+  rates: Record<string, number>,
+  eurToUsdRate: number = 1.0968
+): number => {
+  if (fromCurrency === toCurrency) return amount;
+  if (fromCurrency === 'EUR') {
+    // EUR to target
+    if (toCurrency === 'USD') return amount * eurToUsdRate;
+    if (rates[toCurrency]) return (amount * eurToUsdRate) * rates[toCurrency];
+  } else if (toCurrency === 'EUR') {
+    // fromCurrency to EUR
+    if (fromCurrency === 'USD') return amount / eurToUsdRate;
+    if (rates[fromCurrency]) return (amount / (eurToUsdRate * rates[fromCurrency]));
+  } else {
+    // fromCurrency to USD to toCurrency
+    let amountInUSD = amount;
+    if (fromCurrency !== 'USD') {
+      if (fromCurrency === 'EUR') amountInUSD = amount * eurToUsdRate;
+      else if (rates[fromCurrency]) amountInUSD = amount / rates[fromCurrency];
+    }
+    if (toCurrency === 'USD') return amountInUSD;
+    if (rates[toCurrency]) return amountInUSD * rates[toCurrency];
+  }
+  // Fallback: no conversion
+  return amount;
+}; 

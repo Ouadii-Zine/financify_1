@@ -222,13 +222,28 @@ const AnalyticsEva = () => {
   // Calculate EVA breakdown metrics
   const evaBreakdown = {
     totalIncome: loans.reduce((sum, loan) => {
-      const interest = (loan.margin + loan.referenceRate) * loan.originalAmount;
-      const fees = loan.fees.upfront + loan.fees.commitment + loan.fees.agency + loan.fees.other;
-      return sum + interest + fees;
+      let interest = 0;
+      let commission = 0;
+      let fees = loan.fees.upfront + loan.fees.agency + loan.fees.other;
+      if (loan.type === 'revolver') {
+        interest = (loan.margin + loan.referenceRate) * loan.drawnAmount;
+        commission = loan.fees.commitment * loan.undrawnAmount;
+      } else {
+        interest = (loan.margin + loan.referenceRate) * loan.originalAmount;
+        commission = loan.fees.commitment * loan.originalAmount;
+      }
+      return sum + interest + commission + fees;
     }, 0),
     totalCosts: loans.reduce((sum, loan) => {
-      const fundingCost = defaultCalculationParameters.fundingCost * loan.originalAmount;
-      const operationalCost = defaultCalculationParameters.operationalCostRatio * loan.originalAmount;
+      let fundingCost = 0;
+      let operationalCost = 0;
+      if (loan.type === 'revolver') {
+        fundingCost = defaultCalculationParameters.fundingCost * loan.drawnAmount;
+        operationalCost = defaultCalculationParameters.operationalCostRatio * loan.drawnAmount;
+      } else {
+        fundingCost = defaultCalculationParameters.fundingCost * loan.originalAmount;
+        operationalCost = defaultCalculationParameters.operationalCostRatio * loan.originalAmount;
+      }
       const expectedLoss = loan.metrics?.expectedLoss || 0;
       return sum + fundingCost + operationalCost + expectedLoss;
     }, 0),

@@ -15,6 +15,7 @@ import PortfolioService, { PORTFOLIOS_UPDATED_EVENT } from '@/services/Portfolio
 import ClientTemplateService from '@/services/ClientTemplateService';
 import ParameterService from '@/services/ParameterService';
 import { Switch } from '@/components/ui/switch';
+import CurrencyService from '@/services/CurrencyService';
 
 interface LoanFormData {
   id?: string;
@@ -57,6 +58,7 @@ interface LoanFormData {
   gracePeriodMonths?: string;
   allowPrepayment?: boolean;
   allowPenalty?: boolean;
+  revocableImmediately?: boolean;
   // ------------------------------------------------
 }
 
@@ -77,8 +79,9 @@ const LoanNew = () => {
   const [isCreatePortfolioOpen, setIsCreatePortfolioOpen] = useState(false);
   const [newPortfolioName, setNewPortfolioName] = useState('');
   
-  // Currency state management
-  const [currentCurrency, setCurrentCurrency] = useState<Currency>('USD');
+  // Set default currency from ParameterService
+  const parameters = ParameterService.loadParameters();
+  const [currentCurrency, setCurrentCurrency] = useState<Currency>(parameters.currency || 'EUR');
   
   // Rating system state
   const [selectedRatingType, setSelectedRatingType] = useState<RatingType>('sp');
@@ -106,8 +109,8 @@ const LoanNew = () => {
   }, []);
   
   const defaultFormData: LoanFormData = {
-    name: '',
-    clientName: '',
+    name: 'Test Loan',
+    clientName: 'Test Client',
     clientType: 'banqueCommerciale',
     portfolioId: '',
     type: 'term',
@@ -115,7 +118,7 @@ const LoanNew = () => {
     startDate: new Date().toISOString().split('T')[0],
     endDate: new Date(new Date().setFullYear(new Date().getFullYear() + 5)).toISOString().split('T')[0],
     currency: currentCurrency,
-    originalAmount: '',
+    originalAmount: '1000000',
     outstandingAmount: '',
     drawnAmount: '',
     undrawnAmount: '0',
@@ -141,7 +144,8 @@ const LoanNew = () => {
     interestCalculationMethod: 'Mois de 30 jours/Année de 360 jours',
     gracePeriodMonths: '0',
     allowPrepayment: false,
-    allowPenalty: false
+    allowPenalty: false,
+    revocableImmediately: false
     // ------------------------------------------------
   };
   
@@ -223,7 +227,8 @@ const LoanNew = () => {
             interestCalculationMethod: loanToEdit.interestCalculationMethod,
             gracePeriodMonths: loanToEdit.gracePeriodMonths.toString(),
             allowPrepayment: loanToEdit.allowPrepayment,
-            allowPenalty: loanToEdit.allowPenalty
+            allowPenalty: loanToEdit.allowPenalty,
+            revocableImmediately: loanToEdit.revocableImmediately
             // ------------------------------------------------
           });
         } else {
@@ -292,10 +297,12 @@ const LoanNew = () => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-    
+
+    // Debug: log formData
+    console.log('Submitting loan formData:', formData);
+
     try {
       const loanId = formData.id || `loan-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-      
       // Prepare ratings object
       const ratings: LoanRatings = {
         internal: formData.internalRating !== 'N/A' ? formData.internalRating as InternalRating : undefined,
@@ -304,9 +311,39 @@ const LoanNew = () => {
         fitch: formData.fitchRating !== 'N/A' ? formData.fitchRating as FitchRating : undefined
       };
 
+      // Always parse as numbers, never empty string
+      let drawnAmount = parseFloat(formData.drawnAmount?.toString() || '0');
+      let undrawnAmount = 0;
+      if (formData.type === 'revolver') {
+        undrawnAmount = parseFloat(formData.originalAmount) - drawnAmount;
+        if (isNaN(drawnAmount)) drawnAmount = 0;
+        if (isNaN(undrawnAmount)) undrawnAmount = 0;
+      } else {
+        undrawnAmount = parseFloat(formData.undrawnAmount?.toString() || '0');
+      }
+
+      let uniqueName = formData.name;
+      if (!isEditMode) {
+        // Ensure unique loan name in the selected portfolio
+        const existingLoans = loanDataService.getLoans(formData.portfolioId);
+        const baseName = formData.name;
+        const regex = new RegExp(`^${baseName}(?:_(\\d+))?$`);
+        let maxSuffix = 0;
+        existingLoans.forEach(l => {
+          const match = l.name.match(regex);
+          if (match) {
+            const suffix = match[1] ? parseInt(match[1], 10) : 0;
+            if (suffix >= maxSuffix) maxSuffix = suffix + 1;
+          }
+        });
+        if (maxSuffix > 0) {
+          uniqueName = `${baseName}_${maxSuffix}`;
+        }
+      }
+
       const preparedLoan: Loan = {
         id: loanId,
-        name: formData.name,
+        name: uniqueName,
         clientName: formData.clientName,
         clientType: formData.clientType,
         portfolioId: formData.portfolioId,
@@ -314,11 +351,11 @@ const LoanNew = () => {
         status: formData.status as LoanStatus,
         startDate: formData.startDate,
         endDate: formData.endDate,
-        currency: formData.currency as Currency,
-        originalAmount: parseFloat(formData.originalAmount.toString()),
+        currency: formData.currency as Currency, // Store the selected currency
+        originalAmount: parseFloat(formData.originalAmount.toString()), // Use as entered
         outstandingAmount: parseFloat(formData.originalAmount.toString()),
-        drawnAmount: parseFloat(formData.originalAmount.toString()),
-        undrawnAmount: 0,
+        drawnAmount: drawnAmount, // Use as entered
+        undrawnAmount: undrawnAmount, // Use as entered or auto-calculated
         pd: parseFloat(formData.pd.toString()) / 100,
         lgd: parseFloat(formData.lgd.toString()) / 100,
         ead: parseFloat(formData.originalAmount.toString()),
@@ -354,7 +391,8 @@ const LoanNew = () => {
         interestCalculationMethod: formData.interestCalculationMethod,
         gracePeriodMonths: formData.gracePeriodMonths ? parseInt(formData.gracePeriodMonths) : 0,
         allowPrepayment: !!formData.allowPrepayment,
-        allowPenalty: !!formData.allowPenalty
+        allowPenalty: !!formData.allowPenalty,
+        revocableImmediately: formData.revocableImmediately || false
         // ------------------------------------------------
       };
       
@@ -369,10 +407,34 @@ const LoanNew = () => {
             description: `The loan "${preparedLoan.name}" has been successfully updated.`,
             variant: "default"
           });
+          // Redirect to loan details page after update
+          setTimeout(() => {
+            navigate(`/loans/${preparedLoan.id}`);
+          }, 500);
         } else {
           throw new Error("Failed to update loan - could not remove old version.");
         }
       } else {
+        if (!isEditMode) {
+          // Ensure unique loan name in the selected portfolio
+          const existingLoans = loanDataService.getLoans(formData.portfolioId);
+          const baseName = formData.name;
+          // Find all loans with the same base name or base name with _N suffix
+          const regex = new RegExp(`^${baseName}(?:_(\\d+))?$`);
+          let maxSuffix = 0;
+          existingLoans.forEach(l => {
+            const match = l.name.match(regex);
+            if (match) {
+              const suffix = match[1] ? parseInt(match[1], 10) : 0;
+              if (suffix >= maxSuffix) maxSuffix = suffix + 1;
+            }
+          });
+          let uniqueName = baseName;
+          if (maxSuffix > 0) {
+            uniqueName = `${baseName}_${maxSuffix}`;
+          }
+          formData.name = uniqueName;
+        }
         loanDataService.addLoan(preparedLoan, formData.portfolioId, ParameterService.loadParameters());
         
         toast({
@@ -380,11 +442,10 @@ const LoanNew = () => {
           description: `The loan "${preparedLoan.name}" has been successfully created.`,
           variant: "default"
         });
+        setTimeout(() => {
+          navigate('/loans');
+        }, 500);
       }
-      
-      setTimeout(() => {
-        navigate('/loans');
-      }, 500);
       
     } catch (error) {
       console.error("Error during loan operation:", error);
@@ -419,6 +480,18 @@ const LoanNew = () => {
     'AAA', 'AA+', 'AA', 'AA-', 'A+', 'A', 'A-', 'BBB+', 'BBB', 'BBB-',
     'BB+', 'BB', 'BB-', 'B+', 'B', 'B-', 'CCC+', 'CCC', 'CCC-', 'CC', 'C', 'RD', 'D'
   ];
+
+  const [currencyOptions, setCurrencyOptions] = useState<{ code: string; name: string }[]>([]);
+
+  useEffect(() => {
+    // Mimic the setup page: show all supported currencies
+    const fetchCurrencies = async () => {
+      const service = CurrencyService.getInstance();
+      const rates = await service.fetchLiveRates();
+      setCurrencyOptions(rates.map(r => ({ code: r.currency, name: r.currency })));
+    };
+    fetchCurrencies();
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -566,38 +639,17 @@ const LoanNew = () => {
               
               <div className="space-y-2">
                 <Label htmlFor="currency">Currency</Label>
-                <Select 
-                  value={formData.currency} 
-                  onValueChange={(value) => handleSelectChange('currency', value)}
+                <Select
+                  value={formData.currency}
+                  onValueChange={value => handleSelectChange('currency', value)}
                 >
                   <SelectTrigger id="currency">
                     <SelectValue placeholder="Select a currency" />
                   </SelectTrigger>
                   <SelectContent>
-                    {[
-                      { code: 'USD', name: 'US Dollar' },
-                      { code: 'EUR', name: 'Euro' },
-                      { code: 'GBP', name: 'British Pound' },
-                      { code: 'CHF', name: 'Swiss Franc' },
-                      { code: 'JPY', name: 'Japanese Yen' },
-                      { code: 'CAD', name: 'Canadian Dollar' },
-                      { code: 'AUD', name: 'Australian Dollar' },
-                      { code: 'CNY', name: 'Chinese Yuan' },
-                      { code: 'MAD', name: 'Moroccan Dirham' },
-                      { code: 'INR', name: 'Indian Rupee' },
-                      { code: 'BRL', name: 'Brazilian Real' },
-                      { code: 'MXN', name: 'Mexican Peso' },
-                      { code: 'KRW', name: 'South Korean Won' },
-                      { code: 'SGD', name: 'Singapore Dollar' },
-                      { code: 'NOK', name: 'Norwegian Krone' },
-                      { code: 'SEK', name: 'Swedish Krona' },
-                      { code: 'DKK', name: 'Danish Krone' },
-                      { code: 'PLN', name: 'Polish Zloty' },
-                      { code: 'CZK', name: 'Czech Koruna' },
-                      { code: 'HUF', name: 'Hungarian Forint' },
-                    ].map(currency => (
+                    {currencyOptions.map(currency => (
                       <SelectItem key={currency.code} value={currency.code}>
-                        {currency.code} - {currency.name}
+                        {currency.code}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -616,6 +668,50 @@ const LoanNew = () => {
                   required 
                 />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="drawnAmount">Drawn Amount</Label>
+                <Input
+                  id="drawnAmount"
+                  name="drawnAmount"
+                  type="number"
+                  value={formData.drawnAmount}
+                  onChange={handleInputChange}
+                  placeholder="1000000"
+                />
+              </div>
+              {/* Only show Undrawn Amount for non-revolver loans */}
+              {(formData.type === 'term' || formData.type === 'bullet' || formData.type === 'amortizing') && (
+                <div className="space-y-2">
+                  <Label htmlFor="undrawnAmount">Undrawn Amount</Label>
+                  <Input
+                    id="undrawnAmount"
+                    name="undrawnAmount"
+                    type="number"
+                    value={formData.undrawnAmount}
+                    onChange={handleInputChange}
+                    placeholder="1200000"
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    The portion of the authorized line not yet drawn.
+                  </p>
+                </div>
+              )}
+              {formData.type === 'revolver' && (
+                <div className="space-y-2">
+                  <Label htmlFor="revocableImmediately">Revocable Immediately</Label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="revocableImmediately"
+                      name="revocableImmediately"
+                      type="checkbox"
+                      checked={!!formData.revocableImmediately}
+                      onChange={e => setFormData(prev => ({ ...prev, revocableImmediately: e.target.checked }))}
+                    />
+                    <span className="text-xs text-muted-foreground">If checked, CCF will be 10% regardless of duration.</span>
+                  </div>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -1037,7 +1133,13 @@ const LoanNew = () => {
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? 'Saving...' : isEditMode ? 'Update Loan' : 'Create Loan'}
           </Button>
-          <Button type="button" variant="outline" onClick={() => navigate('/loans')}>
+          <Button type="button" variant="outline" onClick={() => {
+  if (isEditMode && loanId) {
+    navigate(`/loans/${loanId}`);
+  } else {
+    navigate('/loans');
+  }
+}}>
               Cancel
             </Button>
         </div>

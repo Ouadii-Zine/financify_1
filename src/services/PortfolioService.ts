@@ -252,6 +252,17 @@ export class PortfolioService {
     return undefined;
   }
 
+  // Remove all loans from a specific portfolio
+  removeAllLoansFromPortfolio(portfolioId: string): boolean {
+    const portfolioIndex = this.portfolios.findIndex(p => p.id === portfolioId);
+    if (portfolioIndex === -1) return false;
+    this.portfolios[portfolioIndex].loans = [];
+    this.portfolios[portfolioIndex].lastModified = new Date().toISOString();
+    this.saveToLocalStorage();
+    this.dispatchPortfoliosUpdated();
+    return true;
+  }
+
   // Utility methods
   getClientTypes(): ClientType[] {
     return ['banqueCommerciale', 'banqueInvestissement', 'assurance', 'fonds', 'entreprise'];

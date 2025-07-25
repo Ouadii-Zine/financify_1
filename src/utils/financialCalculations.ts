@@ -133,20 +133,53 @@ export const getRatingMapping = (loan: Loan, params: CalculationParameters, pref
   };
 };
 
-// Calcul de l'Expected Loss (EL)
+// Helper: Calculate CCF for revolvers
+function getCCF(loan: Loan): number {
+  // Support a 'revocableImmediately' flag for CCF logic
+  if ((loan as any).revocableImmediately) return 0.1;
+  const start = new Date(loan.startDate);
+  const end = new Date(loan.endDate);
+  const durationYears = (end.getTime() - start.getTime()) / (365 * 24 * 60 * 60 * 1000);
+  if (durationYears > 1) return 0.4;
+  if (durationYears < 1) return 0.2;
+  return 0.1; // fallback (should be explicit if flag exists)
+}
+
+// Helper: Calculate EAD for revolvers
+function calculateRevolverEAD(loan: Loan): number {
+  const ccf = getCCF(loan);
+  return loan.drawnAmount + (loan.undrawnAmount * ccf);
+}
+
+// Helper: Calculate monthly interest for revolvers
+function calculateRevolverMonthlyInterest(loan: Loan): number {
+  // Annual rate = margin + referenceRate
+  return loan.drawnAmount * ((loan.margin + loan.referenceRate) / 12);
+}
+
+// Helper: Calculate annual commission for revolvers
+function calculateRevolverAnnualCommission(loan: Loan): number {
+  return loan.undrawnAmount * loan.fees.commitment;
+}
+
+// Patch: calculateExpectedLoss
 export const calculateExpectedLoss = (loan: Loan): number => {
+  if (loan.type === 'revolver') {
+    // Use EAD for revolver
+    const ead = calculateRevolverEAD(loan);
+    return loan.pd * loan.lgd * ead;
+  }
   return loan.pd * loan.lgd * loan.ead;
 };
 
-// Calcul des Risk-Weighted Assets (RWA) using selected rating type
+// Patch: calculateRWA
 export const calculateRWA = (loan: Loan, params: CalculationParameters, preferredRatingType?: RatingType): number => {
   const ratingMapping = getRatingMapping(loan, params, preferredRatingType);
-  
-  // Use the risk weight from S&P rating mapping
   const riskWeight = ratingMapping.riskWeight;
-  
-  // Calculate RWA using the standard formula: RWA = EAD × Risk Weight × 100%
-  // Risk weight is already in percentage terms (e.g., 1.5 for BB+)
+  if (loan.type === 'revolver') {
+    const ead = calculateRevolverEAD(loan);
+    return ead * riskWeight;
+  }
   return loan.ead * riskWeight;
 };
 
@@ -231,29 +264,65 @@ export const calculateRAROC = (loan: Loan, params: CalculationParameters, prefer
   return capitalRequired > 0 ? riskAdjustedProfit / capitalRequired : 0;
 };
 
-// Calcul des métriques complètes d'un prêt
+// Patch: calculateLoanMetrics
 export const calculateLoanMetrics = (loan: Loan, params: CalculationParameters, preferredRatingType?: RatingType): LoanMetrics => {
+  if (loan.type === 'revolver') {
+    const ead = calculateRevolverEAD(loan);
+    const rwa = ead * getRatingMapping(loan, params, preferredRatingType).riskWeight;
+    const expectedLoss = loan.pd * loan.lgd * ead;
+    const monthlyInterest = calculateRevolverMonthlyInterest(loan);
+    const annualCommission = calculateRevolverAnnualCommission(loan);
+    const capitalConsumption = rwa * params.capitalRatio;
+    // Compute ROE, RAROC, netMargin, effectiveYield for revolvers
+    const loanDurationMs = (loan.endDate ? new Date(loan.endDate).getTime() : 0) - (loan.startDate ? new Date(loan.startDate).getTime() : 0);
+    const loanDurationYears = loanDurationMs / (365 * 24 * 60 * 60 * 1000);
+    const annualInterestIncome = (loan.margin + loan.referenceRate) * loan.drawnAmount;
+    const annualCommitmentFee = loan.fees.commitment * loan.undrawnAmount;
+    const upfrontFeesAmortized = (loan.fees.upfront + loan.fees.agency + loan.fees.other) / Math.max(loanDurationYears, 1);
+    const annualIncome = annualInterestIncome + annualCommitmentFee + upfrontFeesAmortized;
+    const fundingCost = params.fundingCost * loan.drawnAmount;
+    const operationalCost = params.operationalCostRatio * loan.originalAmount;
+    const profitBeforeTax = annualIncome - fundingCost - operationalCost - expectedLoss;
+    const profitAfterTax = profitBeforeTax * (1 - params.corporateTaxRate);
+    const roe = capitalConsumption > 0 ? profitAfterTax / capitalConsumption : 0;
+    const raroc = capitalConsumption > 0 ? profitBeforeTax / capitalConsumption : 0;
+    const costOfRisk = expectedLoss / (loan.drawnAmount || 1);
+    const netMargin = loan.margin - (params.fundingCost + params.operationalCostRatio + costOfRisk);
+    const feesPerYear = (loan.fees.upfront + loan.fees.agency + loan.fees.other) / Math.max(loanDurationYears, 1);
+    const effectiveYield = (loan.margin + loan.referenceRate) + (feesPerYear / (loan.drawnAmount || 1));
+    return {
+      evaIntrinsic: (roe - params.targetROE) * capitalConsumption,
+      evaSale: 0, // Not directly specified for revolvers
+      expectedLoss,
+      rwa,
+      roe,
+      raroc,
+      costOfRisk,
+      capitalConsumption,
+      netMargin,
+      effectiveYield,
+      monthlyInterest,
+      annualCommission
+    };
+  }
+  // Default for other types
   const expectedLoss = calculateExpectedLoss(loan);
   const rwa = calculateRWA(loan, params, preferredRatingType);
   const roe = calculateROE(loan, params, preferredRatingType);
   const raroc = calculateRAROC(loan, params, preferredRatingType);
   const evaIntrinsic = calculateEVAIntrinsic(loan, params, preferredRatingType);
   const evaSale = calculateEVASale(loan, params, preferredRatingType);
-  
   const capitalConsumption = rwa * params.capitalRatio;
-  const costOfRisk = expectedLoss / (loan.drawnAmount || 1); // Éviter division par zéro
+  const costOfRisk = expectedLoss / (loan.drawnAmount || 1); // Avoid division by zero
   const netMargin = loan.margin - (params.fundingCost + params.operationalCostRatio + costOfRisk);
-  
   // Calcul correct du yield effectif
   const loanDurationMs = (loan.endDate ? new Date(loan.endDate).getTime() : 0) - 
                          (loan.startDate ? new Date(loan.startDate).getTime() : 0);
   const loanDurationYears = loanDurationMs / (365 * 24 * 60 * 60 * 1000);
-  
   const feesPerYear = (loan.fees.upfront + loan.fees.agency + loan.fees.other) / 
                      Math.max(loanDurationYears, 1);
   const effectiveYield = (loan.margin + loan.referenceRate) + 
                          (feesPerYear / (loan.drawnAmount || 1));
-  
   return {
     evaIntrinsic,
     evaSale,

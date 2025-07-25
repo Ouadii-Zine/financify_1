@@ -33,7 +33,7 @@ import { getAvailableRatingTypes } from '@/utils/financialCalculations';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import ParameterService from '@/services/ParameterService';
-import { formatCurrency as formatCurrencyUtil, convertCurrency } from '@/utils/currencyUtils';
+import { formatCurrency as formatCurrencyUtil, convertCurrency, convertBetweenCurrencies } from '@/utils/currencyUtils';
 import { 
   TrendingDown, 
   AlertTriangle, 
@@ -84,6 +84,7 @@ const Portfolio = () => {
   const [currentCurrency, setCurrentCurrency] = useState<Currency>('USD');
   const [currentExchangeRate, setCurrentExchangeRate] = useState<number>(1.0);
   const [eurToUsdRate, setEurToUsdRate] = useState<number>(1.0968); // EUR to USD rate
+  const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({});
   
   // Load currency settings from parameters and fetch EUR rate
   useEffect(() => {
@@ -105,6 +106,8 @@ const Portfolio = () => {
           if (eurRate) {
             setEurToUsdRate(eurRate);
           }
+          // Store all rates for currency conversion
+          setExchangeRates(data.rates || {});
         }
       } catch (error) {
         console.warn('Failed to fetch EUR rate, using fallback:', error);
@@ -264,9 +267,17 @@ const Portfolio = () => {
   }));
   
   // Formatter to display amounts in selected currency
-  const formatCurrency = (value: number) => {
-    // Convert from EUR to selected currency if needed
-    const convertedValue = convertCurrency(value, currentCurrency, currentExchangeRate, eurToUsdRate);
+  const formatCurrency = (value: number, loanCurrency?: Currency) => {
+    // If no loan currency provided, assume EUR (backward compatibility)
+    const fromCurrency = loanCurrency || 'EUR';
+    
+    // If loan currency and current currency are the same, no conversion needed
+    if (fromCurrency === currentCurrency) {
+      return formatCurrencyUtil(value, currentCurrency, { maximumFractionDigits: 0 });
+    }
+    
+    // Convert from loan currency to current currency
+    const convertedValue = convertBetweenCurrencies(value, fromCurrency, currentCurrency, exchangeRates, eurToUsdRate);
     return formatCurrencyUtil(convertedValue, currentCurrency, { maximumFractionDigits: 0 });
   };
   

@@ -57,14 +57,15 @@ import {
 } from 'lucide-react';
 import {
   AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
+  AlertDialogTrigger,
   AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from '@/components/ui/alert-dialog';
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { defaultCalculationParameters } from '../data/sampleData';
 import { Loan, PortfolioSummary, ClientType, Currency } from '../types/finance';
@@ -75,7 +76,7 @@ import ExcelTemplateService from '../services/ExcelTemplateService';
 import { toast } from '@/hooks/use-toast';
 import { LOANS_UPDATED_EVENT } from '../services/LoanDataService';
 import ParameterService from '@/services/ParameterService';
-import { formatCurrency as formatCurrencyUtil, convertCurrency } from '@/utils/currencyUtils';
+import { formatCurrency as formatCurrencyUtil, convertCurrency, convertBetweenCurrencies } from '@/utils/currencyUtils';
 
 const LoansList = () => {
   const navigate = useNavigate();
@@ -91,6 +92,7 @@ const LoansList = () => {
   const [currentCurrency, setCurrentCurrency] = useState<Currency>('USD');
   const [currentExchangeRate, setCurrentExchangeRate] = useState<number>(1.0);
   const [eurToUsdRate, setEurToUsdRate] = useState<number>(1.0968); // EUR to USD rate
+  const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({});
   
   // Filtering and search state
   const [searchTerm, setSearchTerm] = useState('');
@@ -127,6 +129,8 @@ const LoansList = () => {
           if (eurRate) {
             setEurToUsdRate(eurRate);
           }
+          // Store all rates for currency conversion
+          setExchangeRates(data.rates || {});
         }
       } catch (error) {
         console.warn('Failed to fetch EUR rate, using fallback:', error);
@@ -304,9 +308,17 @@ const LoansList = () => {
     return sortDirection === 'asc' ? ' ↑' : ' ↓';
   };
   
-  const formatCurrency = (amount: number) => {
-    // Convert from EUR to selected currency if needed
-    const convertedValue = convertCurrency(amount, currentCurrency, currentExchangeRate, eurToUsdRate);
+  const formatCurrency = (amount: number, loanCurrency?: Currency) => {
+    // If no loan currency provided, assume EUR (backward compatibility)
+    const fromCurrency = loanCurrency || 'EUR';
+    
+    // If loan currency and current currency are the same, no conversion needed
+    if (fromCurrency === currentCurrency) {
+      return formatCurrencyUtil(amount, currentCurrency, { maximumFractionDigits: 0 });
+    }
+    
+    // Convert from loan currency to current currency
+    const convertedValue = convertBetweenCurrencies(amount, fromCurrency, currentCurrency, exchangeRates, eurToUsdRate);
     return formatCurrencyUtil(convertedValue, currentCurrency, { maximumFractionDigits: 0 });
   };
   
@@ -425,6 +437,24 @@ const LoansList = () => {
     setLoanToDelete(null);
   };
 
+  const handleDeleteAllLoans = () => {
+    if (!selectedPortfolioId) return;
+    const success = portfolioService.removeAllLoansFromPortfolio(selectedPortfolioId);
+    if (success) {
+      toast({
+        title: 'All loans deleted',
+        description: 'All loans in the selected portfolio have been deleted.',
+        variant: 'default',
+      });
+      loadLoansForPortfolio(selectedPortfolioId);
+    } else {
+      toast({
+        title: 'Error',
+        description: 'Failed to delete loans.',
+        variant: 'destructive',
+      });
+    }
+  };
 
 
   const selectedPortfolio = portfolios.find(p => p.id === selectedPortfolioId);
@@ -457,6 +487,26 @@ const LoansList = () => {
             <Plus className="h-4 w-4 mr-2" />
                 New Loan
           </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive" disabled={!selectedPortfolioId || loans.length === 0}>
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete All Loans
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete all loans in this portfolio?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This action will permanently delete all loans in the selected portfolio. This cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleDeleteAllLoans}>Delete All</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
       
@@ -656,11 +706,11 @@ const LoansList = () => {
                           {loan.status}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-right">{formatCurrency(loan.originalAmount)}</TableCell>
+                                          <TableCell className="text-right">{formatCurrency(loan.originalAmount, loan.currency)}</TableCell>
                   <TableCell className="text-right">{formatPercent(loan.pd)}</TableCell>
                   <TableCell className="text-right">{formatPercent(loan.lgd)}</TableCell>
                       <TableCell className={`text-right ${(loan.metrics?.evaIntrinsic || 0) > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formatCurrency(loan.metrics?.evaIntrinsic || 0)}
+                                            {formatCurrency(loan.metrics?.evaIntrinsic || 0, loan.currency)}
                   </TableCell>
                       <TableCell className={`text-right ${(loan.metrics?.roe || 0) > defaultCalculationParameters.targetROE ? 'text-green-600' : 'text-red-600'}`}>
                     {formatPercent(loan.metrics?.roe || 0)}

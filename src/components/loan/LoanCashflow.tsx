@@ -7,11 +7,18 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, BarChart, Bar } from 'recharts';
 import { formatCurrency, convertCurrency } from '@/utils/currencyUtils';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 
 const CASHFLOW_TYPES = [
   { key: 'contractual', label: 'Contractual' },
   { key: 'forecast', label: 'Forecast' },
   { key: 'stress', label: 'Stress' }
+];
+
+const STRESS_SUBTYPES = [
+  { key: 'DEFAULT', label: 'Default' },
+  { key: 'LIQUIDITY_CRISIS', label: 'Liquidity Crisis' },
+  { key: 'INTEREST_SHOCK', label: 'Interest Shock' }
 ];
 
 function addPeriod(date: Date, freq: 'monthly' | 'quarterly' | 'semiannual' | 'annual') {
@@ -167,13 +174,113 @@ function generateTermLoanForecastCashFlows(loan: Loan): CashFlow[] {
 }
 
 // STRESS CASH FLOWS
-function generateTermLoanStressCashFlows(loan: Loan): CashFlow[] {
-  // Clone les contractuels et change la description/type
-  return generateTermLoanContractualCashFlows(loan).map(cf => ({
-    ...cf,
-    description: (cf.description || '') + ' (stress)',
-    type: cf.type === 'interest' ? 'interest' : cf.type
-  }));
+const DEFAULT_STRESS_VARS = {
+  pd: 0.01,
+  lgd: 0.45,
+  outstanding: undefined as number | undefined, // fallback to loan.outstandingAmount
+};
+const LIQUIDITY_CRISIS_VARS = {
+  stressUtilizationRate: 0.7,
+  scheduledOutflows: undefined as number | undefined, // fallback to loan.originalAmount
+  availableLiquidity: undefined as number | undefined, // fallback to loan.drawnAmount + loan.undrawnAmount
+  // undrawn removed
+};
+const INTEREST_SHOCK_VARS = {
+  interestShock: 0.02,
+};
+
+function generateTermLoanStressCashFlows(
+  loan: Loan,
+  subType: 'DEFAULT' | 'LIQUIDITY_CRISIS' | 'INTEREST_SHOCK',
+  defaultVars: typeof DEFAULT_STRESS_VARS,
+  liquidityVars: typeof LIQUIDITY_CRISIS_VARS,
+  interestShockVars: typeof INTEREST_SHOCK_VARS
+): CashFlow[] {
+  const baseFlows = generateTermLoanContractualCashFlows(loan);
+  let combined: CashFlow[] = baseFlows;
+  if (subType === 'DEFAULT') {
+    const pd = defaultVars.pd;
+    const lgd = defaultVars.lgd;
+    const outstanding = defaultVars.outstanding ?? loan.outstandingAmount ?? loan.originalAmount;
+    const defaultAmount = outstanding * pd;
+    const recoveryAmount = defaultAmount * (1 - lgd);
+    const netLoss = defaultAmount - recoveryAmount;
+    const lastDate = baseFlows.length > 0 ? baseFlows[baseFlows.length - 1].date : new Date().toISOString().split('T')[0];
+    combined = [
+      ...baseFlows,
+      {
+        id: 'stress-default',
+        date: lastDate,
+        type: 'default',
+        amount: defaultAmount,
+        isManual: false,
+        description: `Default scenario: DefaultAmount = Outstanding × PD = ${outstanding} × ${pd}`
+      },
+      {
+        id: 'stress-recovery',
+        date: lastDate,
+        type: 'recovery',
+        amount: recoveryAmount,
+        isManual: false,
+        description: `Recovery: RecoveryAmount = DefaultAmount × (1 - LGD) = ${defaultAmount} × (1 - ${lgd})`
+      },
+      {
+        id: 'stress-netloss',
+        date: lastDate,
+        type: 'netloss',
+        amount: netLoss,
+        isManual: false,
+        description: `Net Loss: NetLoss = DefaultAmount - RecoveryAmount = ${defaultAmount} - ${recoveryAmount}`
+      }
+    ];
+  } else if (subType === 'LIQUIDITY_CRISIS') {
+    // Always calculate undrawn as originalAmount - drawnAmount from loan details
+    const stressUtilizationRate = typeof liquidityVars.stressUtilizationRate === 'number' ? liquidityVars.stressUtilizationRate : 0.7;
+    const scheduledOutflows = typeof liquidityVars.scheduledOutflows === 'number' ? liquidityVars.scheduledOutflows : loan.originalAmount;
+    // For liquidity gap, only use drawnAmount as available liquidity (not drawn + undrawn)
+    const availableLiquidity = typeof liquidityVars.availableLiquidity === 'number' ? liquidityVars.availableLiquidity : loan.drawnAmount;
+    const undrawn = loan.originalAmount - loan.drawnAmount;
+    const stressedDrawings = undrawn * stressUtilizationRate;
+    const liquidityGap = scheduledOutflows - availableLiquidity;
+    const firstDate = baseFlows.length > 0 ? baseFlows[0].date : new Date().toISOString().split('T')[0];
+    combined = [
+      ...baseFlows,
+      {
+        id: 'stress-liquidity-drawdown',
+        date: firstDate,
+        type: 'drawdown',
+        amount: stressedDrawings,
+        isManual: false,
+        description: `Liquidity crisis: StressedDrawings = ${undrawn} × ${stressUtilizationRate}`
+      },
+      {
+        id: 'stress-liquidity-gap',
+        date: firstDate,
+        type: 'liquidity_crisis',
+        amount: liquidityGap,
+        isManual: false,
+        description: `Liquidity Gap = ScheduledOutflows - AvailableLiquidity = ${scheduledOutflows} - ${availableLiquidity}`
+      }
+    ];
+  } else if (subType === 'INTEREST_SHOCK') {
+    const interestShock = interestShockVars.interestShock;
+    combined = baseFlows.map(cf =>
+      cf.type === 'interest'
+        ? {
+            ...cf,
+            amount: cf.amount * (1 + interestShock / (loan.margin + loan.referenceRate)),
+            description: (cf.description || '') + ` (Interest shock: +${interestShock * 100}bps)`
+          }
+        : cf
+    );
+  }
+  // Sort by date, then by type for same-date events
+  return combined.sort((a, b) => {
+    const dateA = new Date(a.date).getTime();
+    const dateB = new Date(b.date).getTime();
+    if (dateA !== dateB) return dateA - dateB;
+    return a.type.localeCompare(b.type);
+  });
 }
 
 interface LoanCashflowProps {
@@ -187,6 +294,11 @@ const LoanCashflow: React.FC = () => {
   const [currentCurrency, setCurrentCurrency] = useState<Currency>('USD');
   const [currentExchangeRate, setCurrentExchangeRate] = useState<number>(1.0);
   const [eurToUsdRate, setEurToUsdRate] = useState<number>(1.0968);
+  const [isTableOpen, setIsTableOpen] = useState(true);
+  const [stressSubType, setStressSubType] = useState<'DEFAULT' | 'LIQUIDITY_CRISIS' | 'INTEREST_SHOCK'>('DEFAULT');
+  const [defaultVars, setDefaultVars] = useState(DEFAULT_STRESS_VARS);
+  const [liquidityVars, setLiquidityVars] = useState(LIQUIDITY_CRISIS_VARS);
+  const [interestShockVars, setInterestShockVars] = useState(INTEREST_SHOCK_VARS);
 
   // Charger la currency choisie depuis les paramètres globaux
   useEffect(() => {
@@ -251,7 +363,7 @@ const LoanCashflow: React.FC = () => {
         case 'forecast':
           return generateTermLoanForecastCashFlows(loan) || [];
         case 'stress':
-          return generateTermLoanStressCashFlows(loan) || [];
+          return generateTermLoanStressCashFlows(loan, stressSubType, defaultVars, liquidityVars, interestShockVars) || [];
         default:
           return [];
       }
@@ -266,10 +378,55 @@ const LoanCashflow: React.FC = () => {
         description: 'Error: ' + (e instanceof Error ? e.message : String(e))
       }];
     }
-  }, [loan, typeToUse]);
+  }, [loan, typeToUse, stressSubType, defaultVars, liquidityVars, interestShockVars]);
   // Correction : agréger les cash flows par date pour additionner intérêts et principal sur la même échéance
   const chartData = useMemo(() => {
     if (!loan) return [];
+    // For stress scenario: liquidity crisis, adjust outstanding for stressed drawings only
+    if (selectedType === 'stress' && stressSubType === 'LIQUIDITY_CRISIS') {
+      // Get base chart data
+      const baseChart = (() => {
+        // Grouper tous les cash flows par date
+        const grouped: Record<string, { date: string; interest: number; principal: number; outstanding: number }> = {};
+        let outstanding = loan.originalAmount || 0;
+        (Array.isArray(flows) ? flows : []).forEach(cf => {
+          if (!grouped[cf.date]) {
+            grouped[cf.date] = { date: cf.date, interest: 0, principal: 0, outstanding };
+          }
+          if (cf.type === 'interest') {
+            grouped[cf.date].interest += cf.amount;
+          }
+          if (cf.type === 'repayment' || cf.type === 'prepayment') {
+            grouped[cf.date].principal += cf.amount;
+            outstanding -= cf.amount;
+          }
+          // Mettre à jour l'encours après chaque principal
+          grouped[cf.date].outstanding = Math.max(outstanding, 0);
+        });
+        return Object.values(grouped)
+          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+          .map(row => ({
+            ...row,
+            interest: convertCurrency(row.interest, currentCurrency, currentExchangeRate, eurToUsdRate),
+            principal: convertCurrency(row.principal, currentCurrency, currentExchangeRate, eurToUsdRate),
+            outstanding: convertCurrency(row.outstanding, currentCurrency, currentExchangeRate, eurToUsdRate)
+          }));
+      })();
+      // Find the crisis date (first cashflow date)
+      const crisisDate = baseChart.length > 0 ? baseChart[0].date : undefined;
+      // Calculate stressed drawings as undrawn * stressUtilizationRate
+      const undrawn = loan.originalAmount - loan.drawnAmount;
+      const stressUtilizationRate = typeof liquidityVars.stressUtilizationRate === 'number' ? liquidityVars.stressUtilizationRate : 0.7;
+      const stressedDrawings = undrawn * stressUtilizationRate;
+      // Apply the jump at the crisis date (add only stressedDrawings, not liquidity gap)
+      return baseChart.map(row => {
+        if (row.date === crisisDate) {
+          return { ...row, outstanding: row.outstanding + convertCurrency(stressedDrawings, currentCurrency, currentExchangeRate, eurToUsdRate) };
+        }
+        return row;
+      });
+    }
+    // Default: use existing logic
     // Grouper tous les cash flows par date
     const grouped: Record<string, { date: string; interest: number; principal: number; outstanding: number }> = {};
     let outstanding = loan.originalAmount || 0;
@@ -296,8 +453,168 @@ const LoanCashflow: React.FC = () => {
         principal: convertCurrency(row.principal, currentCurrency, currentExchangeRate, eurToUsdRate),
         outstanding: convertCurrency(row.outstanding, currentCurrency, currentExchangeRate, eurToUsdRate)
       }));
-  }, [flows, loan, currentCurrency, currentExchangeRate, eurToUsdRate]);
+  }, [flows, loan, currentCurrency, currentExchangeRate, eurToUsdRate, selectedType, stressSubType, liquidityVars, flows]);
+  // For Interest & Principal Payments chart, recalculate after crisis for liquidity crisis scenario
+  const interestPrincipalChartData = useMemo(() => {
+    if (!loan) return [];
+    if (selectedType === 'stress' && stressSubType === 'LIQUIDITY_CRISIS') {
+      // Use the same crisis date and stressedDrawings as in the outstanding logic
+      const baseFlows = generateTermLoanContractualCashFlows(loan);
+      const crisisDate = baseFlows.length > 0 ? baseFlows[0].date : new Date().toISOString().split('T')[0];
+      const undrawn = loan.originalAmount - loan.drawnAmount;
+      const stressUtilizationRate = typeof liquidityVars.stressUtilizationRate === 'number' ? liquidityVars.stressUtilizationRate : 0.7;
+      const stressedDrawings = undrawn * stressUtilizationRate;
+      // Recalculate interest and principal after the crisis date using new outstanding
+      let outstanding = loan.originalAmount + stressedDrawings;
+      const freq = loan.principalRepaymentFrequency || 'annual';
+      const intFreq = loan.interestPaymentFrequency || freq;
+      const amortType = loan.amortizationType || 'inFine';
+      const grace = loan.gracePeriodMonths || 0;
+      const start = new Date(loan.startDate);
+      const end = new Date(loan.endDate);
+      const periods: Date[] = [];
+      let d = new Date(start);
+      while (d < end) {
+        periods.push(new Date(d));
+        d = addPeriod(d, freq);
+        if (d > end) d = new Date(end);
+      }
+      if (periods[periods.length - 1].getTime() !== end.getTime()) periods.push(end);
+      const N = periods.length;
+      let principalSchedule = Array(N).fill(0);
+      if (amortType === 'inFine') {
+        principalSchedule[N - 1] = outstanding;
+      } else if (amortType === 'constant') {
+        const perPeriod = outstanding / N;
+        for (let i = grace; i < N; i++) principalSchedule[i] = perPeriod;
+      } else if (amortType === 'annuity') {
+        let periodsPerYear = 1;
+        if (freq === 'monthly') periodsPerYear = 12;
+        else if (freq === 'quarterly') periodsPerYear = 4;
+        else if (freq === 'semiannual') periodsPerYear = 2;
+        const r = (loan.margin + loan.referenceRate) / periodsPerYear;
+        const n = N - grace;
+        const annuity = outstanding * r / (1 - Math.pow(1 + r, -n));
+        let out = outstanding;
+        for (let i = 0; i < N; i++) {
+          if (i < grace) continue;
+          const interest = out * r;
+          const principal = annuity - interest;
+          principalSchedule[i] = principal;
+          out -= principal;
+        }
+      }
+      // Build chart data
+      let out = outstanding;
+      const chartRows = periods.map((date, i) => {
+        let interest = 0;
+        if (i >= grace) {
+          interest = out * (loan.margin + loan.referenceRate) * getYearFraction(freq);
+        }
+        let principal = 0;
+        if (principalSchedule[i] > 0) {
+          principal = principalSchedule[i];
+          out -= principal;
+        }
+        return {
+          date: date.toISOString().split('T')[0],
+          interest: convertCurrency(interest, currentCurrency, currentExchangeRate, eurToUsdRate),
+          principal: convertCurrency(principal, currentCurrency, currentExchangeRate, eurToUsdRate)
+        };
+      });
+      return chartRows;
+    }
+    // Default: use existing logic
+    // Grouper tous les cash flows par date
+    const grouped: Record<string, { date: string; interest: number; principal: number }> = {};
+    (Array.isArray(flows) ? flows : []).forEach(cf => {
+      if (!grouped[cf.date]) {
+        grouped[cf.date] = { date: cf.date, interest: 0, principal: 0 };
+      }
+      if (cf.type === 'interest') {
+        grouped[cf.date].interest += cf.amount;
+      }
+      if (cf.type === 'repayment' || cf.type === 'prepayment') {
+        grouped[cf.date].principal += cf.amount;
+      }
+    });
+    return Object.values(grouped)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .map(row => ({
+        ...row,
+        interest: convertCurrency(row.interest, currentCurrency, currentExchangeRate, eurToUsdRate),
+        principal: convertCurrency(row.principal, currentCurrency, currentExchangeRate, eurToUsdRate)
+      }));
+  }, [flows, loan, currentCurrency, currentExchangeRate, eurToUsdRate, selectedType, stressSubType, liquidityVars]);
   if (!loan) return <div>Loan not found</div>;
+  const renderStressVars = () => {
+    if (selectedType !== 'stress') return null;
+    const handleReset = () => {
+      if (stressSubType === 'DEFAULT') setDefaultVars(DEFAULT_STRESS_VARS);
+      if (stressSubType === 'LIQUIDITY_CRISIS') setLiquidityVars(LIQUIDITY_CRISIS_VARS);
+      if (stressSubType === 'INTEREST_SHOCK') setInterestShockVars(INTEREST_SHOCK_VARS);
+    };
+    if (stressSubType === 'DEFAULT') {
+      return (
+        <div className="flex flex-wrap gap-4 mb-2 items-end">
+          <label>PD (%)
+            <input type="number" step="0.01" min="0" max="1" value={defaultVars.pd}
+              onChange={e => setDefaultVars(v => ({ ...v, pd: parseFloat(e.target.value) }))}
+              className="ml-1 border rounded px-2 py-1 w-20" />
+          </label>
+          <label>LGD (%)
+            <input type="number" step="0.01" min="0" max="1" value={defaultVars.lgd}
+              onChange={e => setDefaultVars(v => ({ ...v, lgd: parseFloat(e.target.value) }))}
+              className="ml-1 border rounded px-2 py-1 w-20" />
+          </label>
+          <label>Outstanding
+            <input type="number" step="0.01" min="0" value={defaultVars.outstanding ?? ''}
+              onChange={e => setDefaultVars(v => ({ ...v, outstanding: e.target.value ? parseFloat(e.target.value) : undefined }))}
+              placeholder="auto"
+              className="ml-1 border rounded px-2 py-1 w-24" />
+          </label>
+          <button type="button" onClick={handleReset} className="ml-4 px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 text-sm">Reset to Default</button>
+        </div>
+      );
+    }
+    if (stressSubType === 'LIQUIDITY_CRISIS') {
+      return (
+        <div className="flex flex-wrap gap-4 mb-2 items-end">
+          <label>Stress Utilization Rate
+            <input type="number" step="0.01" min="0" max="1" value={liquidityVars.stressUtilizationRate}
+              onChange={e => setLiquidityVars(v => ({ ...v, stressUtilizationRate: parseFloat(e.target.value) }))}
+              className="ml-1 border rounded px-2 py-1 w-24" />
+          </label>
+          <label>Scheduled Outflows
+            <input type="number" step="0.01" min="0" value={liquidityVars.scheduledOutflows ?? ''}
+              onChange={e => setLiquidityVars(v => ({ ...v, scheduledOutflows: e.target.value ? parseFloat(e.target.value) : undefined }))}
+              placeholder="auto"
+              className="ml-1 border rounded px-2 py-1 w-24" />
+          </label>
+          <label>Available Liquidity
+            <input type="number" step="0.01" min="0" value={liquidityVars.availableLiquidity ?? ''}
+              onChange={e => setLiquidityVars(v => ({ ...v, availableLiquidity: e.target.value ? parseFloat(e.target.value) : undefined }))}
+              placeholder="auto"
+              className="ml-1 border rounded px-2 py-1 w-24" />
+          </label>
+          <button type="button" onClick={handleReset} className="ml-4 px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 text-sm">Reset to Default</button>
+        </div>
+      );
+    }
+    if (stressSubType === 'INTEREST_SHOCK') {
+      return (
+        <div className="flex flex-wrap gap-4 mb-2 items-end">
+          <label>Interest Shock (decimal)
+            <input type="number" step="0.001" min="0" value={interestShockVars.interestShock}
+              onChange={e => setInterestShockVars(v => ({ ...v, interestShock: parseFloat(e.target.value) }))}
+              className="ml-1 border rounded px-2 py-1 w-24" />
+          </label>
+          <button type="button" onClick={handleReset} className="ml-4 px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 text-sm">Reset to Default</button>
+        </div>
+      );
+    }
+    return null;
+  };
   return (
     <div className="space-y-8">
       <div className="flex gap-2 mb-2">
@@ -310,41 +627,60 @@ const LoanCashflow: React.FC = () => {
             {t.label}
           </button>
         ))}
+        {selectedType === 'stress' && (
+          <div className="flex gap-2 ml-4">
+            {STRESS_SUBTYPES.map(s => (
+              <button
+                key={s.key}
+                className={`px-3 py-1 rounded border ${stressSubType === s.key ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-800'}`}
+                onClick={() => setStressSubType(s.key as any)}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
+      {renderStressVars()}
       {Array.isArray(flows) && flows[0] && flows[0].id.startsWith('error-') && (
         <div className="bg-red-100 text-red-800 p-3 rounded mb-4">
           {flows[0].description}
         </div>
       )}
       <Card>
-        <CardHeader>
-          <CardTitle>Cash Flow Schedule ({CASHFLOW_TYPES.find(t => t.key === typeToUse)?.label})</CardTitle>
+        <CardHeader className="flex flex-row items-center justify-between cursor-pointer" onClick={() => setIsTableOpen(v => !v)}>
+          <div className="flex items-center gap-2">
+            {isTableOpen ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+            <CardTitle>Cash Flow Schedule ({CASHFLOW_TYPES.find(t => t.key === typeToUse)?.label})</CardTitle>
+          </div>
         </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-                <TableHead>Description</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(Array.isArray(flows) ? flows : []).map(cf => (
-                <TableRow key={cf.id}>
-                  <TableCell>{cf.date}</TableCell>
-                  <TableCell>{cf.type}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(
-                    convertCurrency(cf.amount, currentCurrency, currentExchangeRate, eurToUsdRate),
-                    currentCurrency
-                  )}</TableCell>
-                  <TableCell>{cf.description || '-'}</TableCell>
+        {isTableOpen && (
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Description</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
+              </TableHeader>
+              <TableBody>
+                {(Array.isArray(flows) ? flows : []).map(cf => (
+                  <TableRow key={cf.id}>
+                    <TableCell>{cf.date}</TableCell>
+                    <TableCell>{cf.type}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(
+                      convertCurrency(cf.amount, currentCurrency, currentExchangeRate, eurToUsdRate),
+                      currentCurrency
+                    )}</TableCell>
+                    <TableCell>{cf.description || '-'}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        )}
       </Card>
       <Card>
         <CardHeader>
@@ -369,7 +705,7 @@ const LoanCashflow: React.FC = () => {
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={chartData}>
+            <BarChart data={interestPrincipalChartData}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="date" />
               <YAxis />

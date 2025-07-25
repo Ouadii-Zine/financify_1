@@ -159,6 +159,7 @@ export interface Loan {
   gracePeriodMonths?: number;
   allowPrepayment?: boolean;
   allowPenalty?: boolean;
+  revocableImmediately?: boolean;
   // ------------------------------------------------
 
   // Multi-rating support
@@ -194,6 +195,9 @@ export interface LoanMetrics {
   capitalConsumption: number;
   netMargin: number;
   effectiveYield: number;
+  // Add these for revolvers
+  monthlyInterest?: number;
+  annualCommission?: number;
 }
 
 export interface Portfolio {

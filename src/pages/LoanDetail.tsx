@@ -49,7 +49,8 @@ import ClientTemplateService from '../services/ClientTemplateService';
 import { toast } from '@/hooks/use-toast';
 import YieldCurve from '../components/loan/YieldCurve';
 import ParameterService from '@/services/ParameterService';
-import { formatCurrency as formatCurrencyUtil, convertCurrency } from '@/utils/currencyUtils';
+import { formatCurrency as formatCurrencyUtil, convertCurrency, convertBetweenCurrencies } from '@/utils/currencyUtils';
+import CurrencyService from '@/services/CurrencyService';
 import LoanCashflow from '@/components/loan/LoanCashflow';
 
 const LoanDetail = () => {
@@ -63,6 +64,7 @@ const LoanDetail = () => {
   const [currentCurrency, setCurrentCurrency] = useState<Currency>('USD');
   const [currentExchangeRate, setCurrentExchangeRate] = useState<number>(1.0);
   const [eurToUsdRate, setEurToUsdRate] = useState<number>(1.0968); // EUR to USD rate
+  const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({});
   
   // Check if we are in edit mode (via query parameter)
   const searchParams = new URLSearchParams(location.search);
@@ -127,6 +129,18 @@ const LoanDetail = () => {
       window.removeEventListener('parameters-updated', handleParametersUpdated);
     };
   }, []);
+
+  useEffect(() => {
+    // Fetch live rates for currency conversion
+    const fetchRates = async () => {
+      const service = CurrencyService.getInstance();
+      const rates = await service.fetchLiveRates();
+      const ratesMap: Record<string, number> = {};
+      rates.forEach(r => { ratesMap[r.currency] = r.rate; });
+      setExchangeRates(ratesMap);
+    };
+    fetchRates();
+  }, []);
   
   useEffect(() => {
     if (!id) {
@@ -142,8 +156,8 @@ const LoanDetail = () => {
       const foundLoan = loanDataService.getLoanById(id);
       
       if (foundLoan) {
-        // Calculate loan metrics if necessary
-        const metrics = foundLoan.metrics || calculateLoanMetrics(foundLoan, defaultCalculationParameters);
+        // Always recalculate metrics for up-to-date values
+        const metrics = calculateLoanMetrics(foundLoan, defaultCalculationParameters);
         setLoan({ ...foundLoan, metrics });
       } else {
         // If in edit mode and loan doesn't exist, redirect to list
@@ -204,11 +218,18 @@ const LoanDetail = () => {
     );
   }
   
-  // Function to format amounts with dynamic currency conversion
-  const formatCurrency = (amount: number) => {
-    // Convert from EUR to selected currency if needed
-    const convertedValue = convertCurrency(amount, currentCurrency, currentExchangeRate, eurToUsdRate);
-    return formatCurrencyUtil(convertedValue, currentCurrency, { maximumFractionDigits: 0 });
+  const parameters = ParameterService.loadParameters();
+  const setupCurrency = parameters.currency || 'EUR';
+
+  // Function to format and convert amounts to setup currency for display
+  const formatAmountInSetupCurrency = (amount: number, loanCurrency: Currency) => {
+    // If loan currency and setup currency are the same, no conversion needed
+    if (loanCurrency === setupCurrency) {
+      return formatCurrencyUtil(amount, setupCurrency, { maximumFractionDigits: 0 });
+    }
+    // Only convert if currencies are different
+    const converted = convertBetweenCurrencies(amount, loanCurrency, setupCurrency, exchangeRates, eurToUsdRate);
+    return formatCurrencyUtil(converted, setupCurrency, { maximumFractionDigits: 0 });
   };
   
   // Function to format percentages
@@ -361,7 +382,10 @@ const LoanDetail = () => {
         </div>
         
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => navigate(`/loans/${displayLoan.id}/edit`)}>
+          <Button variant="outline" onClick={() => {
+            localStorage.setItem('loan-to-edit', JSON.stringify(displayLoan));
+            navigate(`/loans/new?edit=true&id=${displayLoan.id}`);
+          }}>
             <Edit className="h-4 w-4 mr-2" />
             Edit
           </Button>
@@ -393,10 +417,16 @@ const LoanDetail = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {formatCurrency(displayLoan.originalAmount)}
+                {formatAmountInSetupCurrency(displayLoan.originalAmount, displayLoan.currency)}
+                <span className="text-sm text-muted-foreground ml-2">
+                  ({formatCurrencyUtil(displayLoan.originalAmount, displayLoan.currency, { maximumFractionDigits: 0 })})
+                </span>
               </div>
               <p className="text-sm text-muted-foreground mt-1">
-                Drawn: {formatCurrency(displayLoan.drawnAmount)}
+                Drawn: {formatAmountInSetupCurrency(displayLoan.drawnAmount, displayLoan.currency)}
+                <span className="text-sm text-muted-foreground ml-2">
+                  ({formatCurrencyUtil(displayLoan.drawnAmount, displayLoan.currency, { maximumFractionDigits: 0 })})
+                </span>
               </p>
             </CardContent>
           </Card>
@@ -458,7 +488,10 @@ const LoanDetail = () => {
                 <div>
                   <div className="text-sm text-muted-foreground">EVA</div>
                   <div className={`text-lg font-bold ${getValueColor(displayLoan.metrics.evaIntrinsic)}`}>
-                    {formatCurrency(displayLoan.metrics.evaIntrinsic)}
+                    {formatAmountInSetupCurrency(displayLoan.metrics.evaIntrinsic, displayLoan.currency)}
+                    <span className="text-sm text-muted-foreground ml-2">
+                      ({formatCurrencyUtil(displayLoan.metrics.evaIntrinsic, displayLoan.currency, { maximumFractionDigits: 0 })})
+                    </span>
                   </div>
                 </div>
                 <div>
@@ -547,19 +580,31 @@ const LoanDetail = () => {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <p className="text-sm">Original Amount</p>
-                      <p className="text-lg font-semibold">{formatCurrency(displayLoan.originalAmount)}</p>
+                      <p className="text-lg font-semibold">{formatAmountInSetupCurrency(displayLoan.originalAmount, displayLoan.currency)}</p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        ({formatCurrencyUtil(displayLoan.originalAmount, displayLoan.currency, { maximumFractionDigits: 0 })})
+                      </p>
                     </div>
                     <div>
                       <p className="text-sm">Outstanding</p>
-                      <p className="text-lg font-semibold">{formatCurrency(displayLoan.outstandingAmount)}</p>
+                      <p className="text-lg font-semibold">{formatAmountInSetupCurrency(displayLoan.outstandingAmount, displayLoan.currency)}</p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        ({formatCurrencyUtil(displayLoan.outstandingAmount, displayLoan.currency, { maximumFractionDigits: 0 })})
+                      </p>
                     </div>
                     <div>
                       <p className="text-sm">Drawn</p>
-                      <p className="text-lg font-semibold">{formatCurrency(displayLoan.drawnAmount)}</p>
+                      <p className="text-lg font-semibold">{formatAmountInSetupCurrency(displayLoan.drawnAmount, displayLoan.currency)}</p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        ({formatCurrencyUtil(displayLoan.drawnAmount, displayLoan.currency, { maximumFractionDigits: 0 })})
+                      </p>
                     </div>
                     <div>
                       <p className="text-sm">Undrawn</p>
-                      <p className="text-lg font-semibold">{formatCurrency(displayLoan.undrawnAmount)}</p>
+                      <p className="text-lg font-semibold">{formatAmountInSetupCurrency(displayLoan.undrawnAmount, displayLoan.currency)}</p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        ({formatCurrencyUtil(displayLoan.undrawnAmount, displayLoan.currency, { maximumFractionDigits: 0 })})
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -568,7 +613,7 @@ const LoanDetail = () => {
             
             <Card className="financial-card">
               <CardHeader>
-                <CardTitle>Cash Flows Evolution</CardTitle>
+                <CardTitle>EVA Scenario Analysis</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="h-80">
@@ -577,7 +622,7 @@ const LoanDetail = () => {
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="name" />
                       <YAxis />
-                      <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                      <Tooltip formatter={(value: number) => formatAmountInSetupCurrency(value, displayLoan.currency)} />
                       <Legend />
                       <Bar dataKey="eva" name="EVA" fill="#2D5BFF" />
                     </BarChart>
@@ -596,28 +641,40 @@ const LoanDetail = () => {
                 <div>
                   <p className="text-sm text-muted-foreground">Intrinsic EVA</p>
                   <p className={`text-2xl font-bold ${getValueColor(displayLoan.metrics.evaIntrinsic)}`}>
-                    {formatCurrency(displayLoan.metrics.evaIntrinsic)}
+                    {formatAmountInSetupCurrency(displayLoan.metrics.evaIntrinsic, displayLoan.currency)}
+                    <span className="text-sm text-muted-foreground ml-2">
+                      ({formatCurrencyUtil(displayLoan.metrics.evaIntrinsic, displayLoan.currency, { maximumFractionDigits: 0 })})
+                    </span>
                   </p>
                 </div>
                 
                 <div>
                   <p className="text-sm text-muted-foreground">Sale EVA</p>
                   <p className={`text-2xl font-bold ${getValueColor(displayLoan.metrics.evaSale)}`}>
-                    {formatCurrency(displayLoan.metrics.evaSale)}
+                    {formatAmountInSetupCurrency(displayLoan.metrics.evaSale, displayLoan.currency)}
+                    <span className="text-sm text-muted-foreground ml-2">
+                      ({formatCurrencyUtil(displayLoan.metrics.evaSale, displayLoan.currency, { maximumFractionDigits: 0 })})
+                    </span>
                   </p>
                 </div>
                 
                 <div>
                   <p className="text-sm text-muted-foreground">Expected Loss</p>
                   <p className="text-2xl font-bold text-financial-red">
-                    {formatCurrency(displayLoan.metrics.expectedLoss)}
+                    {formatAmountInSetupCurrency(displayLoan.metrics.expectedLoss, displayLoan.currency)}
+                    <span className="text-sm text-muted-foreground ml-2">
+                      ({formatCurrencyUtil(displayLoan.metrics.expectedLoss, displayLoan.currency, { maximumFractionDigits: 0 })})
+                    </span>
                   </p>
                 </div>
                 
                 <div>
                   <p className="text-sm text-muted-foreground">RWA</p>
                   <p className="text-2xl font-bold">
-                    {formatCurrency(displayLoan.metrics.rwa)}
+                    {formatAmountInSetupCurrency(displayLoan.metrics.rwa, displayLoan.currency)}
+                    <span className="text-sm text-muted-foreground ml-2">
+                      ({formatCurrencyUtil(displayLoan.metrics.rwa, displayLoan.currency, { maximumFractionDigits: 0 })})
+                    </span>
                   </p>
                 </div>
                 
@@ -638,7 +695,10 @@ const LoanDetail = () => {
                 <div>
                   <p className="text-sm text-muted-foreground">Capital Consumption</p>
                   <p className="text-2xl font-bold">
-                    {formatCurrency(displayLoan.metrics.capitalConsumption)}
+                    {formatAmountInSetupCurrency(displayLoan.metrics.capitalConsumption, displayLoan.currency)}
+                    <span className="text-sm text-muted-foreground ml-2">
+                      ({formatCurrencyUtil(displayLoan.metrics.capitalConsumption, displayLoan.currency, { maximumFractionDigits: 0 })})
+                    </span>
                   </p>
                 </div>
                 
@@ -648,6 +708,28 @@ const LoanDetail = () => {
                     {formatPercent(displayLoan.metrics.netMargin)}
                   </p>
                 </div>
+                {displayLoan.type === 'revolver' && (
+                  <div>
+                    <p className="text-sm text-muted-foreground">Monthly Interest</p>
+                    <p className="text-2xl font-bold">
+                      {formatAmountInSetupCurrency(displayLoan.metrics.monthlyInterest || 0, displayLoan.currency)}
+                      <span className="text-sm text-muted-foreground ml-2">
+                        ({formatCurrencyUtil(displayLoan.metrics.monthlyInterest || 0, displayLoan.currency, { maximumFractionDigits: 0 })})
+                      </span>
+                    </p>
+                  </div>
+                )}
+                {displayLoan.type === 'revolver' && (
+                  <div>
+                    <p className="text-sm text-muted-foreground">Annual Commission</p>
+                    <p className="text-2xl font-bold">
+                      {formatAmountInSetupCurrency(displayLoan.metrics.annualCommission || 0, displayLoan.currency)}
+                      <span className="text-sm text-muted-foreground ml-2">
+                        ({formatCurrencyUtil(displayLoan.metrics.annualCommission || 0, displayLoan.currency, { maximumFractionDigits: 0 })})
+                      </span>
+                    </p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -680,7 +762,7 @@ const LoanDetail = () => {
                     
                     if (fieldInfo?.type === 'number' && typeof value === 'number') {
                       if (key.includes('amount') || key.includes('limit') || key.includes('outstanding') || key.includes('fee')) {
-                        displayValue = formatCurrency(value);
+                        displayValue = formatAmountInSetupCurrency(value, displayLoan.currency);
                       } else if (key.includes('rate') || key.includes('margin') || key.includes('pd') || key.includes('lgd')) {
                         displayValue = formatPercent(value);
                       } else {
@@ -752,14 +834,20 @@ const LoanDetail = () => {
                     <div>
                       <p className="text-sm text-muted-foreground">Intrinsic EVA</p>
                       <p className={`text-2xl font-bold ${getValueColor(displayLoan.metrics.evaIntrinsic)}`}>
-                        {formatCurrency(displayLoan.metrics.evaIntrinsic)}
+                        {formatAmountInSetupCurrency(displayLoan.metrics.evaIntrinsic, displayLoan.currency)}
+                        <span className="text-sm text-muted-foreground ml-2">
+                          ({formatCurrencyUtil(displayLoan.metrics.evaIntrinsic, displayLoan.currency, { maximumFractionDigits: 0 })})
+                        </span>
                       </p>
                     </div>
                     
                     <div>
                       <p className="text-sm text-muted-foreground">Sale EVA</p>
                       <p className={`text-2xl font-bold ${getValueColor(displayLoan.metrics.evaSale)}`}>
-                        {formatCurrency(displayLoan.metrics.evaSale)}
+                        {formatAmountInSetupCurrency(displayLoan.metrics.evaSale, displayLoan.currency)}
+                        <span className="text-sm text-muted-foreground ml-2">
+                          ({formatCurrencyUtil(displayLoan.metrics.evaSale, displayLoan.currency, { maximumFractionDigits: 0 })})
+                        </span>
                       </p>
                     </div>
                     
@@ -808,21 +896,30 @@ const LoanDetail = () => {
                     <div>
                       <p className="text-sm text-muted-foreground">Expected Loss (EL)</p>
                       <p className="text-2xl font-bold text-financial-red">
-                        {formatCurrency(displayLoan.metrics.expectedLoss)}
+                        {formatAmountInSetupCurrency(displayLoan.metrics.expectedLoss, displayLoan.currency)}
+                        <span className="text-sm text-muted-foreground ml-2">
+                          ({formatCurrencyUtil(displayLoan.metrics.expectedLoss, displayLoan.currency, { maximumFractionDigits: 0 })})
+                        </span>
                       </p>
                     </div>
                     
                     <div>
                       <p className="text-sm text-muted-foreground">Risk-Weighted Assets (RWA)</p>
                       <p className="text-2xl font-bold">
-                        {formatCurrency(displayLoan.metrics.rwa)}
+                        {formatAmountInSetupCurrency(displayLoan.metrics.rwa, displayLoan.currency)}
+                        <span className="text-sm text-muted-foreground ml-2">
+                          ({formatCurrencyUtil(displayLoan.metrics.rwa, displayLoan.currency, { maximumFractionDigits: 0 })})
+                        </span>
                       </p>
                     </div>
                     
                     <div>
                       <p className="text-sm text-muted-foreground">Capital Consumption</p>
                       <p className="text-2xl font-bold">
-                        {formatCurrency(displayLoan.metrics.capitalConsumption)}
+                        {formatAmountInSetupCurrency(displayLoan.metrics.capitalConsumption, displayLoan.currency)}
+                        <span className="text-sm text-muted-foreground ml-2">
+                          ({formatCurrencyUtil(displayLoan.metrics.capitalConsumption, displayLoan.currency, { maximumFractionDigits: 0 })})
+                        </span>
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {formatPercent(displayLoan.metrics.capitalConsumption / displayLoan.originalAmount)} of exposure
@@ -935,7 +1032,7 @@ const LoanDetail = () => {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="name" />
                     <YAxis />
-                    <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                    <Tooltip formatter={(value: number) => formatAmountInSetupCurrency(value, displayLoan.currency)} />
                     <Legend />
                     <Bar dataKey="eva" name="EVA" fill="#2D5BFF" />
                   </BarChart>
@@ -957,46 +1054,46 @@ const LoanDetail = () => {
                   <TableBody>
                     <TableRow>
                       <TableCell className="font-medium">Base</TableCell>
-                      <TableCell className="text-right">{formatCurrency(displayLoan.metrics.evaIntrinsic)}</TableCell>
+                      <TableCell className="text-right">{formatAmountInSetupCurrency(displayLoan.metrics.evaIntrinsic, displayLoan.currency)}</TableCell>
                       <TableCell className="text-right">-</TableCell>
                       <TableCell className="text-right">{formatPercent(displayLoan.metrics.roe)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(displayLoan.metrics.rwa)}</TableCell>
+                      <TableCell className="text-right">{formatAmountInSetupCurrency(displayLoan.metrics.rwa, displayLoan.currency)}</TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell className="font-medium">PD +1%</TableCell>
-                      <TableCell className="text-right">{formatCurrency(displayLoan.metrics.evaIntrinsic * 0.9)}</TableCell>
+                      <TableCell className="text-right">{formatAmountInSetupCurrency(displayLoan.metrics.evaIntrinsic * 0.9, displayLoan.currency)}</TableCell>
                       <TableCell className="text-right text-financial-red">
-                        {formatCurrency(displayLoan.metrics.evaIntrinsic * 0.9 - displayLoan.metrics.evaIntrinsic)}
+                        {formatAmountInSetupCurrency(displayLoan.metrics.evaIntrinsic * 0.9 - displayLoan.metrics.evaIntrinsic, displayLoan.currency)}
                       </TableCell>
                       <TableCell className="text-right">{formatPercent(displayLoan.metrics.roe * 0.9)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(displayLoan.metrics.rwa * 1.1)}</TableCell>
+                      <TableCell className="text-right">{formatAmountInSetupCurrency(displayLoan.metrics.rwa * 1.1, displayLoan.currency)}</TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell className="font-medium">Rate +1%</TableCell>
-                      <TableCell className="text-right">{formatCurrency(displayLoan.metrics.evaIntrinsic * 0.85)}</TableCell>
+                      <TableCell className="text-right">{formatAmountInSetupCurrency(displayLoan.metrics.evaIntrinsic * 0.85, displayLoan.currency)}</TableCell>
                       <TableCell className="text-right text-financial-red">
-                        {formatCurrency(displayLoan.metrics.evaIntrinsic * 0.85 - displayLoan.metrics.evaIntrinsic)}
+                        {formatAmountInSetupCurrency(displayLoan.metrics.evaIntrinsic * 0.85 - displayLoan.metrics.evaIntrinsic, displayLoan.currency)}
                       </TableCell>
                       <TableCell className="text-right">{formatPercent(displayLoan.metrics.roe * 0.85)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(displayLoan.metrics.rwa)}</TableCell>
+                      <TableCell className="text-right">{formatAmountInSetupCurrency(displayLoan.metrics.rwa, displayLoan.currency)}</TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell className="font-medium">Spread +1%</TableCell>
-                      <TableCell className="text-right">{formatCurrency(displayLoan.metrics.evaIntrinsic * 1.15)}</TableCell>
+                      <TableCell className="text-right">{formatAmountInSetupCurrency(displayLoan.metrics.evaIntrinsic * 1.15, displayLoan.currency)}</TableCell>
                       <TableCell className="text-right text-financial-green">
-                        {formatCurrency(displayLoan.metrics.evaIntrinsic * 1.15 - displayLoan.metrics.evaIntrinsic)}
+                        {formatAmountInSetupCurrency(displayLoan.metrics.evaIntrinsic * 1.15 - displayLoan.metrics.evaIntrinsic, displayLoan.currency)}
                       </TableCell>
                       <TableCell className="text-right">{formatPercent(displayLoan.metrics.roe * 1.15)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(displayLoan.metrics.rwa)}</TableCell>
+                      <TableCell className="text-right">{formatAmountInSetupCurrency(displayLoan.metrics.rwa, displayLoan.currency)}</TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell className="font-medium">LGD +5%</TableCell>
-                      <TableCell className="text-right">{formatCurrency(displayLoan.metrics.evaIntrinsic * 0.88)}</TableCell>
+                      <TableCell className="text-right">{formatAmountInSetupCurrency(displayLoan.metrics.evaIntrinsic * 0.88, displayLoan.currency)}</TableCell>
                       <TableCell className="text-right text-financial-red">
-                        {formatCurrency(displayLoan.metrics.evaIntrinsic * 0.88 - displayLoan.metrics.evaIntrinsic)}
+                        {formatAmountInSetupCurrency(displayLoan.metrics.evaIntrinsic * 0.88 - displayLoan.metrics.evaIntrinsic, displayLoan.currency)}
                       </TableCell>
                       <TableCell className="text-right">{formatPercent(displayLoan.metrics.roe * 0.88)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(displayLoan.metrics.rwa * 1.05)}</TableCell>
+                      <TableCell className="text-right">{formatAmountInSetupCurrency(displayLoan.metrics.rwa * 1.05, displayLoan.currency)}</TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>
