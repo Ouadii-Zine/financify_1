@@ -218,7 +218,7 @@ const LoansList = () => {
     // Recalculate metrics for these loans
     const loansWithMetrics = portfolioLoans.map(loan => ({
       ...loan,
-      metrics: calculateLoanMetrics(loan, defaultCalculationParameters)
+              metrics: calculateLoanMetrics(loan, ParameterService.loadParameters())
     }));
     
     setLoans(loansWithMetrics);

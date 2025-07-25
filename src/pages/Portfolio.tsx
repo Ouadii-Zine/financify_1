@@ -198,11 +198,11 @@ const Portfolio = () => {
     if (loans.length > 0) {
       const loansWithUpdatedMetrics = loans.map(loan => ({
         ...loan,
-        metrics: calculateLoanMetrics(loan, defaultCalculationParameters, selectedRatingType)
+        metrics: calculateLoanMetrics(loan, ParameterService.loadParameters(), selectedRatingType)
       }));
       
       setLoans(loansWithUpdatedMetrics);
-      setPortfolioMetrics(calculatePortfolioMetrics(loansWithUpdatedMetrics, defaultCalculationParameters, selectedRatingType));
+      setPortfolioMetrics(calculatePortfolioMetrics(loansWithUpdatedMetrics, ParameterService.loadParameters(), selectedRatingType));
     }
   }, [selectedRatingType]);
 
@@ -236,11 +236,11 @@ const Portfolio = () => {
     // Recalculate metrics for these loans using selected rating type
     const loansWithMetrics = portfolioLoans.map(loan => ({
       ...loan,
-      metrics: calculateLoanMetrics(loan, defaultCalculationParameters, selectedRatingType)
+              metrics: calculateLoanMetrics(loan, ParameterService.loadParameters(), selectedRatingType)
     }));
     
     setLoans(loansWithMetrics);
-    setPortfolioMetrics(calculatePortfolioMetrics(loansWithMetrics, defaultCalculationParameters, selectedRatingType));
+          setPortfolioMetrics(calculatePortfolioMetrics(loansWithMetrics, ParameterService.loadParameters(), selectedRatingType));
   };
   
   const handlePortfolioChange = (portfolioId: string) => {

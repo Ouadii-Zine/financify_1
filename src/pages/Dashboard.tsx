@@ -109,11 +109,11 @@ const Dashboard = () => {
       // Calculate metrics for user loans
       const loansWithMetrics = userLoans.map(loan => ({
         ...loan,
-        metrics: calculateLoanMetrics(loan, defaultCalculationParameters)
+        metrics: calculateLoanMetrics(loan, ParameterService.loadParameters())
       }));
       
       // Calculate portfolio metrics
-      const userPortfolioMetrics = calculatePortfolioMetrics(loansWithMetrics, defaultCalculationParameters);
+      const userPortfolioMetrics = calculatePortfolioMetrics(loansWithMetrics, ParameterService.loadParameters());
       
       // Create portfolio with user loans
       const userPortfolio = {

@@ -156,8 +156,9 @@ const LoanDetail = () => {
       const foundLoan = loanDataService.getLoanById(id);
       
       if (foundLoan) {
-        // Always recalculate metrics for up-to-date values
-        const metrics = calculateLoanMetrics(foundLoan, defaultCalculationParameters);
+        // Always recalculate metrics for up-to-date values using current parameters
+        const currentParameters = ParameterService.loadParameters();
+        const metrics = calculateLoanMetrics(foundLoan, currentParameters);
         setLoan({ ...foundLoan, metrics });
       } else {
         // If in edit mode and loan doesn't exist, redirect to list
