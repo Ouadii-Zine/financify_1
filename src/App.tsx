@@ -4,6 +4,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { useAppTitle } from "@/hooks/use-app-title";
 import Layout from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
 import LoansList from "./pages/LoansList";
@@ -16,6 +17,7 @@ import AnalyticsPerformance from "./pages/AnalyticsPerformance";
 import Simulations from "./pages/Simulations";
 import Import from "./pages/Import";
 import Parameters from "./pages/Parameters";
+import Appearance from "./pages/Appearance";
 import Reports from "./pages/Reports";
 import Documentation from "./pages/Documentation";
 import LoanNew from "./pages/LoanNew";
@@ -23,7 +25,10 @@ import Portfolio from "./pages/Portfolio";
 
 const queryClient = new QueryClient();
 
-const App = () => (
+const App = () => {
+  useAppTitle();
+  
+  return (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
@@ -42,6 +47,7 @@ const App = () => (
           <Route path="/simulations" element={<Layout><Simulations /></Layout>} />
           <Route path="/import" element={<Layout><Import /></Layout>} />
           <Route path="/parameters" element={<Layout><Parameters /></Layout>} />
+          <Route path="/appearance" element={<Layout><Appearance /></Layout>} />
           <Route path="/reports" element={<Layout><Reports /></Layout>} />
           <Route path="/documentation" element={<Layout><Documentation /></Layout>} />
           <Route path="*" element={<NotFound />} />
@@ -49,6 +55,7 @@ const App = () => (
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
-);
+  );
+};
 
 export default App;

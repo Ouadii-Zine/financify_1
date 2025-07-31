@@ -1,7 +1,28 @@
 export type LoanStatus = 'active' | 'closed' | 'default' | 'restructured';
 export type LoanType = 'term' | 'revolver' | 'bullet' | 'amortizing';
-export type Currency = 'EUR' | 'USD' | 'GBP' | 'CHF' | 'JPY' | 'CAD' | 'AUD' | 'CNY' | 'MAD' | 'INR' | 'BRL' | 'MXN' | 'KRW' | 'SGD' | 'NOK' | 'SEK' | 'DKK' | 'PLN' | 'CZK' | 'HUF';
+export type Currency = 'EUR' | 'USD' | 'GBP' | 'CHF' | 'JPY' | 'CAD' | 'AUD' | 'CNY' | 'MAD' | 'INR' | 'BRL' | 'MXN' | 'KRW' | 'SGD' | 'NOK' | 'SEK' | 'DKK' | 'PLN' | 'CZK' | 'HUF' | 'ZAR' | 'PKR' | 'THB' | 'MYR';
 export type ClientType = 'banqueCommerciale' | 'banqueInvestissement' | 'assurance' | 'fonds' | 'entreprise';
+
+// Funding Index Types
+export type FundingIndex = 
+  | 'EUR3M' | 'ESTR' | 'SOFR' | 'LIB3M' | 'SONIA' | 'SARON' | 'TONAR' | 'TIBOR' | 'AUB3M' | 'BBSW' | 'BA' | 'CORRA'
+  | 'CIB3M' | 'OIB3M' | 'STIBOR' | 'WIB3M' | 'BUBOR' | 'PRIBOR' | 'SIBOR' | 'SHIBOR' | 'MIBOR' | 'KIBOR' | 'BIBOR' | 'KLIBOR'
+  | 'BRLIBOR' | 'MXNIBOR' | 'KRWIBOR' | 'JIBAR' | 'MADIBOR';
+
+export interface FundingIndexData {
+  code: FundingIndex;
+  name: string;
+  currency: Currency;
+  currentValue: number; // Current rate in percentage
+  lastUpdated: string;
+  description: string;
+}
+
+export interface CurrencyFundingIndex {
+  currency: Currency;
+  defaultIndex: FundingIndex;
+  availableIndices: FundingIndex[];
+}
 
 // S&P Rating System
 export type SPRating = 
@@ -33,16 +54,8 @@ export type FitchRating =
   | 'CCC+' | 'CCC' | 'CCC-'
   | 'CC' | 'C' | 'RD' | 'D' | 'N/A';
 
-// Internal Rating System (customizable, same as S&P for simplicity)
-export type InternalRating = 
-  | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | '11' | '12'
-  | 'AAA' | 'AA+' | 'AA' | 'AA-' 
-  | 'A+' | 'A' | 'A-' 
-  | 'BBB+' | 'BBB' | 'BBB-' 
-  | 'BB+' | 'BB' | 'BB-' 
-  | 'B+' | 'B' | 'B-' 
-  | 'CCC+' | 'CCC' | 'CCC-' 
-  | 'CC' | 'C' | 'D' | 'N/A';
+// Internal Rating System (customizable, allows any string for dynamic ratings)
+export type InternalRating = string;
 
 // Rating type selector
 export type RatingType = 'internal' | 'sp' | 'moodys' | 'fitch';
@@ -110,7 +123,7 @@ export const FITCH_TO_SP_MAPPING: Record<FitchRating, SPRating> = {
 };
 
 // Internal rating to S&P mapping (flexible for different institutions)
-export const INTERNAL_TO_SP_MAPPING: Record<InternalRating, SPRating> = {
+export const INTERNAL_TO_SP_MAPPING: Record<string, SPRating> = {
   // Numeric internal ratings (1-12 scale)
   '1': 'AAA', '2': 'AA', '3': 'A+', '4': 'A-', '5': 'BBB+', '6': 'BBB-',
   '7': 'BB+', '8': 'BB-', '9': 'B+', '10': 'B-', '11': 'CCC', '12': 'D',
@@ -122,6 +135,11 @@ export const INTERNAL_TO_SP_MAPPING: Record<InternalRating, SPRating> = {
   'B+': 'B+', 'B': 'B', 'B-': 'B-',
   'CCC+': 'CCC+', 'CCC': 'CCC', 'CCC-': 'CCC-',
   'CC': 'CC', 'C': 'C', 'D': 'D', 'N/A': 'N/A'
+};
+
+// Function to get S&P equivalent for any internal rating
+export const getInternalRatingSPEquivalent = (internalRating: InternalRating): SPRating => {
+  return INTERNAL_TO_SP_MAPPING[internalRating] || 'BB+'; // Default to BB+ for unknown ratings
 };
 
 export interface Loan {
@@ -150,6 +168,7 @@ export interface Loan {
   };
   margin: number; // Spread over reference rate (%)
   referenceRate: number; // Base rate (%)
+  fundingIndex?: FundingIndex; // Funding index for the loan
 
   // --- NOUVEAUX PARAMÈTRES STRUCTURE CASHFLOW ---
   interestPaymentFrequency?: 'monthly' | 'quarterly' | 'semiannual' | 'annual';

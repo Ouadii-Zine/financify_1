@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
@@ -30,11 +30,11 @@ import {
 } from 'lucide-react';
 import { samplePortfolio, defaultCalculationParameters } from '../data/sampleData';
 import { calculatePortfolioMetrics, calculateLoanMetrics } from '../utils/financialCalculations';
-import { Loan, Currency } from '../types/finance';
+import { Loan, Currency, CalculationParameters } from '../types/finance';
 import LoanDataService from '../services/LoanDataService';
 import { LOANS_UPDATED_EVENT } from '../services/LoanDataService';
 import ParameterService from '../services/ParameterService';
-import { formatCurrency as formatCurrencyUtil, convertCurrency } from '../utils/currencyUtils';
+import { formatCurrency as formatCurrencyUtil, convertCurrency, convertLoanAmountToDisplayCurrency } from '../utils/currencyUtils';
 
 const COLORS = ['#00C48C', '#2D5BFF', '#FFB800', '#FF3B5B', '#1A2C42'];
 
@@ -44,7 +44,84 @@ const Dashboard = () => {
   const [currentCurrency, setCurrentCurrency] = useState<Currency>('USD');
   const [currentExchangeRate, setCurrentExchangeRate] = useState<number>(1.0);
   const [eurToUsdRate, setEurToUsdRate] = useState<number>(1.0968); // EUR to USD rate
+  const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({ USD: 1 });
   const loanDataService = LoanDataService.getInstance();
+  
+  // Calculate portfolio metrics with proper currency conversion
+  const calculatePortfolioMetricsWithCurrencyConversion = (
+    loans: Loan[], 
+    params: CalculationParameters, 
+    displayCurrency: Currency,
+    exchangeRates: Record<string, number>,
+    eurToUsdRate: number
+  ) => {
+
+    // Convert each loan's metrics to display currency before aggregating
+    const loansWithConvertedMetrics = loans.map(loan => {
+      const convertedOriginalAmount = convertLoanAmountToDisplayCurrency(
+        loan.originalAmount, 
+        loan.currency, 
+        displayCurrency, 
+        exchangeRates, 
+        eurToUsdRate
+      );
+      const convertedDrawnAmount = convertLoanAmountToDisplayCurrency(
+        loan.drawnAmount, 
+        loan.currency, 
+        displayCurrency, 
+        exchangeRates, 
+        eurToUsdRate
+      );
+      const convertedUndrawnAmount = convertLoanAmountToDisplayCurrency(
+        loan.undrawnAmount, 
+        loan.currency, 
+        displayCurrency, 
+        exchangeRates, 
+        eurToUsdRate
+      );
+      
+      return {
+        ...loan,
+        originalAmount: convertedOriginalAmount,
+        drawnAmount: convertedDrawnAmount,
+        undrawnAmount: convertedUndrawnAmount,
+        metrics: {
+          ...loan.metrics,
+          expectedLoss: convertLoanAmountToDisplayCurrency(
+            loan.metrics?.expectedLoss || 0, 
+            loan.currency, 
+            displayCurrency, 
+            exchangeRates, 
+            eurToUsdRate
+          ),
+          rwa: convertLoanAmountToDisplayCurrency(
+            loan.metrics?.rwa || 0, 
+            loan.currency, 
+            displayCurrency, 
+            exchangeRates, 
+            eurToUsdRate
+          ),
+          evaIntrinsic: convertLoanAmountToDisplayCurrency(
+            loan.metrics?.evaIntrinsic || 0, 
+            loan.currency, 
+            displayCurrency, 
+            exchangeRates, 
+            eurToUsdRate
+          ),
+          evaSale: convertLoanAmountToDisplayCurrency(
+            loan.metrics?.evaSale || 0, 
+            loan.currency, 
+            displayCurrency, 
+            exchangeRates, 
+            eurToUsdRate
+          )
+        }
+      };
+    });
+    
+    // Now calculate portfolio metrics with converted amounts
+    return calculatePortfolioMetrics(loansWithConvertedMetrics, params);
+  };
   
   // Load currency settings from parameters and fetch EUR rate
   useEffect(() => {
@@ -57,26 +134,28 @@ const Dashboard = () => {
         setCurrentExchangeRate(parameters.exchangeRate);
       }
       
-      // Always fetch the EUR rate for conversion calculations
+      // Fetch all exchange rates
       try {
         const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
         if (response.ok) {
           const data = await response.json();
+          setExchangeRates(data.rates || { USD: 1 });
           const eurRate = data.rates?.EUR;
           if (eurRate) {
             setEurToUsdRate(eurRate);
           }
         }
       } catch (error) {
-        console.warn('Failed to fetch EUR rate, using fallback:', error);
+        console.warn('Failed to fetch exchange rates, using fallback:', error);
         setEurToUsdRate(0.9689); // Fallback EUR rate
+        setExchangeRates({ USD: 1, EUR: 0.9689 });
       }
     };
     
     loadCurrencySettings();
   }, []);
   
-  const loadDashboardData = () => {
+  const loadDashboardData = useCallback(() => {
     // Load data from service
     loanDataService.loadFromLocalStorage();
     // Get only user-added loans, without including predefined examples
@@ -112,8 +191,14 @@ const Dashboard = () => {
         metrics: calculateLoanMetrics(loan, ParameterService.loadParameters())
       }));
       
-      // Calculate portfolio metrics
-      const userPortfolioMetrics = calculatePortfolioMetrics(loansWithMetrics, ParameterService.loadParameters());
+      // Calculate portfolio metrics with currency conversion
+      const userPortfolioMetrics = calculatePortfolioMetricsWithCurrencyConversion(
+        loansWithMetrics, 
+        ParameterService.loadParameters(),
+        currentCurrency,
+        exchangeRates,
+        eurToUsdRate
+      );
       
       // Create portfolio with user loans
       const userPortfolio = {
@@ -130,7 +215,7 @@ const Dashboard = () => {
       const updatedSectorData = calculateSectorData(loansWithMetrics);
       setSectorData(updatedSectorData);
     }
-  };
+  }, [currentCurrency, exchangeRates, eurToUsdRate]);
   
   useEffect(() => {
     loadDashboardData();
@@ -150,18 +235,19 @@ const Dashboard = () => {
         setCurrentExchangeRate(parameters.exchangeRate);
       }
       
-      // Refresh EUR rate when parameters are updated
+      // Refresh exchange rates when parameters are updated
       try {
         const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
         if (response.ok) {
           const data = await response.json();
+          setExchangeRates(data.rates || { USD: 1 });
           const eurRate = data.rates?.EUR;
           if (eurRate) {
             setEurToUsdRate(eurRate);
           }
         }
       } catch (error) {
-        console.warn('Failed to fetch EUR rate, using current value');
+        console.warn('Failed to fetch exchange rates, using current value');
       }
       
       loadDashboardData();
@@ -177,48 +263,68 @@ const Dashboard = () => {
     };
   }, []);
 
-  // Refresh dashboard when currency changes
+  // Refresh dashboard when currency or exchange rates change
   useEffect(() => {
     loadDashboardData();
-  }, [currentCurrency, currentExchangeRate]);
+  }, [currentCurrency, currentExchangeRate, exchangeRates]);
   
   // Add this function to calculate sector data
   const [sectorData, setSectorData] = useState<{ name: string; value: number }[]>([]);
   
-  // Function to calculate sector distribution data
-  const calculateSectorData = (loans: Loan[]) => {
+  // Function to calculate sector distribution data with currency conversion
+  const calculateSectorData = useCallback((loans: Loan[]) => {
     return loans.reduce((acc, loan) => {
       const existingSector = acc.find(item => item.name === loan.sector);
+      const convertedAmount = convertLoanAmountToDisplayCurrency(
+        loan.originalAmount, 
+        loan.currency, 
+        currentCurrency, 
+        exchangeRates, 
+        eurToUsdRate
+      );
       if (existingSector) {
-        existingSector.value += loan.originalAmount;
+        existingSector.value += convertedAmount;
       } else {
-        acc.push({ name: loan.sector, value: loan.originalAmount });
+        acc.push({ name: loan.sector, value: convertedAmount });
       }
       return acc;
     }, [] as { name: string; value: number }[]);
-  };
+  }, [currentCurrency, exchangeRates, eurToUsdRate]);
   
-  // Data for actual portfolio performance by sector
+  // Data for actual portfolio performance by sector with currency conversion
   const performanceBySector = portfolio.loans.reduce((acc, loan) => {
     const existingSector = acc.find(item => item.sector === loan.sector);
     const loanROE = (loan.metrics?.roe || 0) * 100;
     const loanRAROC = (loan.metrics?.raroc || 0) * 100;
-    const loanEVA = loan.metrics?.evaIntrinsic || 0;
+    const loanEVA = convertLoanAmountToDisplayCurrency(
+      loan.metrics?.evaIntrinsic || 0, 
+      loan.currency, 
+      currentCurrency, 
+      exchangeRates, 
+      eurToUsdRate
+    );
+    const loanExposure = convertLoanAmountToDisplayCurrency(
+      loan.originalAmount, 
+      loan.currency, 
+      currentCurrency, 
+      exchangeRates, 
+      eurToUsdRate
+    );
     
     if (existingSector) {
       existingSector.totalEVA += loanEVA;
-      existingSector.totalExposure += loan.originalAmount;
+      existingSector.totalExposure += loanExposure;
       existingSector.loanCount += 1;
       // Weighted average ROE and RAROC by exposure
-      existingSector.weightedROE = ((existingSector.weightedROE * (existingSector.totalExposure - loan.originalAmount)) + 
-                                   (loanROE * loan.originalAmount)) / existingSector.totalExposure;
-      existingSector.weightedRAROC = ((existingSector.weightedRAROC * (existingSector.totalExposure - loan.originalAmount)) + 
-                                     (loanRAROC * loan.originalAmount)) / existingSector.totalExposure;
+      existingSector.weightedROE = ((existingSector.weightedROE * (existingSector.totalExposure - loanExposure)) + 
+                                   (loanROE * loanExposure)) / existingSector.totalExposure;
+      existingSector.weightedRAROC = ((existingSector.weightedRAROC * (existingSector.totalExposure - loanExposure)) + 
+                                     (loanRAROC * loanExposure)) / existingSector.totalExposure;
     } else {
       acc.push({
         sector: loan.sector,
         totalEVA: loanEVA,
-        totalExposure: loan.originalAmount,
+        totalExposure: loanExposure,
         weightedROE: loanROE,
         weightedRAROC: loanRAROC,
         loanCount: 1
@@ -249,7 +355,7 @@ const Dashboard = () => {
     }
   ];
   
-  // Data for evolution of exposure, RWA, EL by quarter
+  // Data for evolution of exposure, RWA, EL by quarter (sample data in EUR)
   const exposureData = [
     { name: 'Q1 2023', exposure: 65000000, rwa: 35000000, el: 750000 },
     { name: 'Q2 2023', exposure: 68000000, rwa: 36500000, el: 800000 },
@@ -258,9 +364,9 @@ const Dashboard = () => {
     { name: 'Q1 2024', exposure: 75000000, rwa: 41000000, el: 880000 },
   ].map(item => ({
     ...item,
-    exposure: convertCurrency(item.exposure, currentCurrency, currentExchangeRate, eurToUsdRate),
-    rwa: convertCurrency(item.rwa, currentCurrency, currentExchangeRate, eurToUsdRate),
-    el: convertCurrency(item.el, currentCurrency, currentExchangeRate, eurToUsdRate)
+    exposure: convertLoanAmountToDisplayCurrency(item.exposure, 'EUR', currentCurrency, exchangeRates, eurToUsdRate),
+    rwa: convertLoanAmountToDisplayCurrency(item.rwa, 'EUR', currentCurrency, exchangeRates, eurToUsdRate),
+    el: convertLoanAmountToDisplayCurrency(item.el, 'EUR', currentCurrency, exchangeRates, eurToUsdRate)
   }));
   
   // Data for Top 5 Loans by EVA chart
@@ -270,15 +376,20 @@ const Dashboard = () => {
     .slice(0, 5)
     .map(loan => ({
       name: loan.name,
-      eva: loan.metrics?.evaIntrinsic || 0,
+      eva: convertLoanAmountToDisplayCurrency(
+        loan.metrics?.evaIntrinsic || 0, 
+        loan.currency, 
+        currentCurrency, 
+        exchangeRates, 
+        eurToUsdRate
+      ),
       roe: (loan.metrics?.roe || 0) * 100
     }));
   
   // Formatter to display amounts in selected currency
   const formatCurrency = (value: number) => {
-    // Convert from EUR to selected currency if needed
-    const convertedValue = convertCurrency(value, currentCurrency, currentExchangeRate, eurToUsdRate);
-    return formatCurrencyUtil(convertedValue, currentCurrency, { maximumFractionDigits: 0 });
+    // Portfolio metrics are already converted to display currency, so no need for additional conversion
+    return formatCurrencyUtil(value, currentCurrency, { maximumFractionDigits: 0 });
   };
   
   return (

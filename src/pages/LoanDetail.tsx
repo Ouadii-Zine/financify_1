@@ -40,6 +40,7 @@ import {
   DollarSign,
   BarChart3,
   TrendingUp,
+  Info,
 } from 'lucide-react';
 import { sampleLoans, defaultCalculationParameters } from '../data/sampleData';
 import { Loan, CashFlow, Currency } from '../types/finance';
@@ -52,6 +53,7 @@ import ParameterService from '@/services/ParameterService';
 import { formatCurrency as formatCurrencyUtil, convertCurrency, convertBetweenCurrencies } from '@/utils/currencyUtils';
 import CurrencyService from '@/services/CurrencyService';
 import LoanCashflow from '@/components/loan/LoanCashflow';
+import FundingIndexService from '@/services/FundingIndexService';
 
 const LoanDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -565,6 +567,30 @@ const LoanDetail = () => {
                     </div>
                   </div>
                   
+                  {displayLoan.fundingIndex && (() => {
+                    const fundingIndexService = FundingIndexService.getInstance();
+                    const indexData = fundingIndexService.getFundingIndexData(displayLoan.fundingIndex);
+                    return (
+                      <div>
+                        <p className="text-sm text-muted-foreground">Funding Index</p>
+                        <div className="flex items-center mt-1">
+                          <TrendingUp className="h-4 w-4 mr-2 text-financial-blue" />
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{indexData?.name || displayLoan.fundingIndex}</span>
+                            <Badge variant="secondary" className="text-xs">
+                              {indexData?.currentValue.toFixed(2)}%
+                            </Badge>
+                          </div>
+                        </div>
+                        {indexData && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {indexData.description}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
+                  
                   <div>
                     <p className="text-sm text-muted-foreground">Rating</p>
                     <div className="flex items-center mt-1">
@@ -985,11 +1011,15 @@ const LoanDetail = () => {
                   <div className="space-y-2">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Funding Cost</span>
-                      <span className="font-medium">{formatPercent(defaultCalculationParameters.fundingCost)}</span>
+                      <span className="font-medium">
+                        {formatPercent(defaultCalculationParameters.fundingCost)}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Operational Costs</span>
-                      <span className="font-medium">{formatPercent(defaultCalculationParameters.operationalCostRatio)}</span>
+                      <span className="font-medium">
+                        {formatPercent(defaultCalculationParameters.operationalCostRatio)}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Cost of Risk</span>

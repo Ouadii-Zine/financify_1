@@ -56,7 +56,7 @@ import { Loan, PortfolioMetrics, PortfolioSummary, Currency } from '@/types/fina
 import LoanDataService, { LOANS_UPDATED_EVENT } from '@/services/LoanDataService';
 import PortfolioService, { PORTFOLIOS_UPDATED_EVENT } from '@/services/PortfolioService';
 import ParameterService from '@/services/ParameterService';
-import { formatCurrency as formatCurrencyUtil, convertCurrency, CURRENCY_SYMBOLS } from '@/utils/currencyUtils';
+import { formatCurrency as formatCurrencyUtil, convertCurrency, convertLoanAmountToDisplayCurrency, CURRENCY_SYMBOLS } from '@/utils/currencyUtils';
 import { useNavigate } from 'react-router-dom';
 import { toast } from '@/hooks/use-toast';
 
@@ -89,6 +89,7 @@ const AnalyticsRisk = () => {
   const [currentCurrency, setCurrentCurrency] = useState<Currency>('USD');
   const [currentExchangeRate, setCurrentExchangeRate] = useState<number>(1.0);
   const [eurToUsdRate, setEurToUsdRate] = useState<number>(1.0968);
+  const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({ USD: 1 });
   
   // Stress testing scenarios
   const [stressScenario, setStressScenario] = useState<string>('mild');
@@ -121,18 +122,21 @@ const AnalyticsRisk = () => {
         setCurrentExchangeRate(parameters.exchangeRate);
       }
       
+      // Fetch all exchange rates
       try {
         const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
         if (response.ok) {
           const data = await response.json();
+          setExchangeRates(data.rates || { USD: 1 });
           const eurRate = data.rates?.EUR;
           if (eurRate) {
             setEurToUsdRate(eurRate);
           }
         }
       } catch (error) {
-        console.warn('Failed to fetch EUR rate, using fallback:', error);
+        console.warn('Failed to fetch exchange rates, using fallback:', error);
         setEurToUsdRate(0.9689);
+        setExchangeRates({ USD: 1, EUR: 0.9689 });
       }
     };
     
@@ -159,17 +163,19 @@ const AnalyticsRisk = () => {
         setCurrentExchangeRate(parameters.exchangeRate);
       }
       
+      // Refresh exchange rates when parameters are updated
       try {
         const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
         if (response.ok) {
           const data = await response.json();
+          setExchangeRates(data.rates || { USD: 1 });
           const eurRate = data.rates?.EUR;
           if (eurRate) {
             setEurToUsdRate(eurRate);
           }
         }
       } catch (error) {
-        console.warn('Failed to fetch EUR rate, using current value');
+        console.warn('Failed to fetch exchange rates, using current value');
       }
     };
     
@@ -208,7 +214,7 @@ const AnalyticsRisk = () => {
 
   // Format currency with dynamic conversion
   const formatCurrency = (value: number) => {
-    const convertedValue = convertCurrency(value, currentCurrency, currentExchangeRate, eurToUsdRate);
+    const convertedValue = convertLoanAmountToDisplayCurrency(value, 'EUR', currentCurrency, exchangeRates, eurToUsdRate);
     return formatCurrencyUtil(convertedValue, currentCurrency, { maximumFractionDigits: 0 });
   };
   

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -66,7 +66,8 @@ import {
   MoreHorizontal
 } from 'lucide-react';
 import ParameterService from '@/services/ParameterService';
-import { formatCurrency as formatCurrencyUtil, convertCurrency } from '@/utils/currencyUtils';
+import { calculatePortfolioMetrics } from '@/utils/financialCalculations';
+import { formatCurrency as formatCurrencyUtil, convertCurrency, convertLoanAmountToDisplayCurrency } from '@/utils/currencyUtils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -98,6 +99,7 @@ const Portfolios = () => {
   const [currentCurrency, setCurrentCurrency] = useState<Currency>('USD');
   const [currentExchangeRate, setCurrentExchangeRate] = useState<number>(1.0);
   const [eurToUsdRate, setEurToUsdRate] = useState<number>(1.0968); // EUR to USD rate
+  const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({ USD: 1 });
   
   // Load currency settings from parameters and fetch EUR rate
   useEffect(() => {
@@ -110,19 +112,21 @@ const Portfolios = () => {
         setCurrentExchangeRate(parameters.exchangeRate);
       }
       
-      // Always fetch the EUR rate for conversion calculations
+      // Fetch all exchange rates
       try {
         const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
         if (response.ok) {
           const data = await response.json();
+          setExchangeRates(data.rates || { USD: 1 });
           const eurRate = data.rates?.EUR;
           if (eurRate) {
             setEurToUsdRate(eurRate);
           }
         }
       } catch (error) {
-        console.warn('Failed to fetch EUR rate, using fallback:', error);
+        console.warn('Failed to fetch exchange rates, using fallback:', error);
         setEurToUsdRate(0.9689); // Fallback EUR rate
+        setExchangeRates({ USD: 1, EUR: 0.9689 });
       }
     };
     
@@ -155,18 +159,19 @@ const Portfolios = () => {
         setCurrentExchangeRate(parameters.exchangeRate);
       }
       
-      // Refresh EUR rate when parameters are updated
+      // Refresh exchange rates when parameters are updated
       try {
         const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
         if (response.ok) {
           const data = await response.json();
+          setExchangeRates(data.rates || { USD: 1 });
           const eurRate = data.rates?.EUR;
           if (eurRate) {
             setEurToUsdRate(eurRate);
           }
         }
       } catch (error) {
-        console.warn('Failed to fetch EUR rate, using current value');
+        console.warn('Failed to fetch exchange rates, using current value');
       }
     };
     
@@ -179,25 +184,162 @@ const Portfolios = () => {
     };
   }, []);
   
-  const loadPortfolios = () => {
+  const loadPortfolios = useCallback(() => {
     const portfolioSummaries = portfolioService.getPortfolioSummaries();
-    setPortfolios(portfolioSummaries);
+    
+    console.log('[PORTFOLIO LIST] Original portfolio summaries:', portfolioSummaries);
+    
+    // Convert portfolio summaries to display currency
+    const convertedPortfolioSummaries = portfolioSummaries.map(summary => {
+      const fullPortfolio = portfolioService.getPortfolioById(summary.id);
+      if (!fullPortfolio) return summary;
+      
+      // Calculate metrics with currency conversion
+      const loansWithConvertedMetrics = fullPortfolio.loans.map(loan => ({
+        ...loan,
+        originalAmount: convertLoanAmountToDisplayCurrency(
+          loan.originalAmount, 
+          loan.currency, 
+          currentCurrency, 
+          exchangeRates, 
+          eurToUsdRate
+        ),
+        drawnAmount: convertLoanAmountToDisplayCurrency(
+          loan.drawnAmount, 
+          loan.currency, 
+          currentCurrency, 
+          exchangeRates, 
+          eurToUsdRate
+        ),
+        outstandingAmount: convertLoanAmountToDisplayCurrency(
+          loan.outstandingAmount, 
+          loan.currency, 
+          currentCurrency, 
+          exchangeRates, 
+          eurToUsdRate
+        ),
+        metrics: {
+          ...loan.metrics,
+          evaIntrinsic: convertLoanAmountToDisplayCurrency(
+            loan.metrics?.evaIntrinsic || 0, 
+            loan.currency, 
+            currentCurrency, 
+            exchangeRates, 
+            eurToUsdRate
+          ),
+          expectedLoss: convertLoanAmountToDisplayCurrency(
+            loan.metrics?.expectedLoss || 0, 
+            loan.currency, 
+            currentCurrency, 
+            exchangeRates, 
+            eurToUsdRate
+          ),
+          rwa: convertLoanAmountToDisplayCurrency(
+            loan.metrics?.rwa || 0, 
+            loan.currency, 
+            currentCurrency, 
+            exchangeRates, 
+            eurToUsdRate
+          )
+        }
+      }));
+      
+      const convertedMetrics = calculatePortfolioMetrics(loansWithConvertedMetrics, ParameterService.loadParameters());
+      
+      console.log('[PORTFOLIO LIST] Portfolio:', summary.name, 'Original EVA:', summary.metrics?.evaSumIntrinsic, 'Converted EVA:', convertedMetrics.evaSumIntrinsic);
+      
+      return {
+        ...summary,
+        totalExposure: convertedMetrics.totalExposure,
+        metrics: convertedMetrics
+      };
+    });
+    
+    console.log('[PORTFOLIO LIST] Converted portfolio summaries:', convertedPortfolioSummaries);
+    
+    setPortfolios(convertedPortfolioSummaries);
     
     // Auto-select the first portfolio if none selected
-    if (!selectedPortfolio && portfolioSummaries.length > 0) {
-      const fullPortfolio = portfolioService.getPortfolioById(portfolioSummaries[0].id);
+    if (!selectedPortfolio && convertedPortfolioSummaries.length > 0) {
+      const fullPortfolio = portfolioService.getPortfolioById(convertedPortfolioSummaries[0].id);
       if (fullPortfolio) {
         setSelectedPortfolio(fullPortfolio);
       }
     }
-  };
+  }, [selectedPortfolio, currentCurrency, exchangeRates, eurToUsdRate]);
   
-  const handlePortfolioSelect = (portfolioId: string) => {
+  const handlePortfolioSelect = useCallback((portfolioId: string) => {
     const portfolio = portfolioService.getPortfolioById(portfolioId);
     if (portfolio) {
-      setSelectedPortfolio(portfolio);
+      // Convert portfolio metrics to display currency
+      const loansWithConvertedMetrics = portfolio.loans.map(loan => ({
+        ...loan,
+        originalAmount: convertLoanAmountToDisplayCurrency(
+          loan.originalAmount, 
+          loan.currency, 
+          currentCurrency, 
+          exchangeRates, 
+          eurToUsdRate
+        ),
+        drawnAmount: convertLoanAmountToDisplayCurrency(
+          loan.drawnAmount, 
+          loan.currency, 
+          currentCurrency, 
+          exchangeRates, 
+          eurToUsdRate
+        ),
+        outstandingAmount: convertLoanAmountToDisplayCurrency(
+          loan.outstandingAmount, 
+          loan.currency, 
+          currentCurrency, 
+          exchangeRates, 
+          eurToUsdRate
+        ),
+        metrics: {
+          ...loan.metrics,
+          evaIntrinsic: convertLoanAmountToDisplayCurrency(
+            loan.metrics?.evaIntrinsic || 0, 
+            loan.currency, 
+            currentCurrency, 
+            exchangeRates, 
+            eurToUsdRate
+          ),
+          expectedLoss: convertLoanAmountToDisplayCurrency(
+            loan.metrics?.expectedLoss || 0, 
+            loan.currency, 
+            currentCurrency, 
+            exchangeRates, 
+            eurToUsdRate
+          ),
+          rwa: convertLoanAmountToDisplayCurrency(
+            loan.metrics?.rwa || 0, 
+            loan.currency, 
+            currentCurrency, 
+            exchangeRates, 
+            eurToUsdRate
+          )
+        }
+      }));
+      
+      const convertedMetrics = calculatePortfolioMetrics(loansWithConvertedMetrics, ParameterService.loadParameters());
+      
+      const convertedPortfolio = {
+        ...portfolio,
+        loans: loansWithConvertedMetrics,
+        metrics: convertedMetrics
+      };
+      
+      setSelectedPortfolio(convertedPortfolio);
     }
-  };
+  }, [currentCurrency, exchangeRates, eurToUsdRate]);
+  
+  // Refresh selected portfolio when currency changes
+  useEffect(() => {
+    // Re-select the current portfolio to get updated currency conversion
+    if (selectedPortfolio) {
+      handlePortfolioSelect(selectedPortfolio.id);
+    }
+  }, [currentCurrency, currentExchangeRate, exchangeRates, handlePortfolioSelect]);
   
   const handleCreatePortfolio = () => {
     if (!newPortfolioName.trim()) {
@@ -272,12 +414,18 @@ const Portfolios = () => {
     }
   };
   
-  // Format currency with dynamic conversion
-  const formatCurrency = (value: number) => {
+  // Format currency with dynamic conversion (assumes EUR)
+  const formatCurrency = useCallback((value: number) => {
     // Convert from EUR to selected currency if needed
-    const convertedValue = convertCurrency(value, currentCurrency, currentExchangeRate, eurToUsdRate);
+    const convertedValue = convertLoanAmountToDisplayCurrency(value, 'EUR', currentCurrency, exchangeRates, eurToUsdRate);
     return formatCurrencyUtil(convertedValue, currentCurrency, { maximumFractionDigits: 0 });
-  };
+  }, [currentCurrency, exchangeRates, eurToUsdRate]);
+  
+  // Format loan amount with proper currency conversion
+  const formatLoanAmount = useCallback((amount: number, loanCurrency: Currency) => {
+    const convertedValue = convertLoanAmountToDisplayCurrency(amount, loanCurrency, currentCurrency, exchangeRates, eurToUsdRate);
+    return formatCurrencyUtil(convertedValue, currentCurrency, { maximumFractionDigits: 0 });
+  }, [currentCurrency, exchangeRates, eurToUsdRate]);
   
   // Get client type label
   const getClientTypeLabel = (clientType?: ClientType) => {
@@ -342,46 +490,136 @@ const Portfolios = () => {
   };
   
   // Chart data for selected portfolio
-  const getChartData = () => {
+  const getChartData = useCallback(() => {
     if (!selectedPortfolio) return { evaBySector: [], loanEvaData: [], roeVsRiskData: [] };
     
     const { loans } = selectedPortfolio;
     
-    // EVA distribution by sector
+    // EVA distribution by sector with currency conversion
     const evaBySector = loans.reduce((acc, loan) => {
       const existingItem = acc.find(item => item.name === loan.sector);
+      const convertedEva = convertLoanAmountToDisplayCurrency(
+        loan.metrics?.evaIntrinsic || 0, 
+        loan.currency, 
+        currentCurrency, 
+        exchangeRates, 
+        eurToUsdRate
+      );
       if (existingItem) {
-        existingItem.value += loan.metrics?.evaIntrinsic || 0;
+        existingItem.value += convertedEva;
         existingItem.count += 1;
       } else {
         acc.push({
           name: loan.sector,
-          value: loan.metrics?.evaIntrinsic || 0,
+          value: convertedEva,
           count: 1
         });
       }
       return acc;
     }, [] as { name: string; value: number; count: number }[]);
     
-    // Data for EVA by loan chart
+    // Data for EVA by loan chart with currency conversion
     const loanEvaData = loans.map(loan => ({
       name: loan.name,
-      evaIntrinsic: loan.metrics?.evaIntrinsic || 0,
+      evaIntrinsic: convertLoanAmountToDisplayCurrency(
+        loan.metrics?.evaIntrinsic || 0, 
+        loan.currency, 
+        currentCurrency, 
+        exchangeRates, 
+        eurToUsdRate
+      ),
       roe: (loan.metrics?.roe || 0) * 100,
-      outstandingAmount: loan.outstandingAmount
+      outstandingAmount: convertLoanAmountToDisplayCurrency(
+        loan.outstandingAmount, 
+        loan.currency, 
+        currentCurrency, 
+        exchangeRates, 
+        eurToUsdRate
+      )
     })).sort((a, b) => b.evaIntrinsic - a.evaIntrinsic);
     
-    // Data for ROE vs Risk chart
-    const roeVsRiskData = loans.map(loan => ({
-      name: loan.name,
-      x: (loan.metrics?.expectedLoss || 0) / loan.outstandingAmount * 100,
-      y: (loan.metrics?.roe || 0) * 100,
-      z: loan.outstandingAmount / 1000000,
-      sector: loan.sector
-    }));
+    // Data for ROE vs Risk chart with currency conversion
+    const roeVsRiskData = loans.map(loan => {
+      const convertedOutstandingAmount = convertLoanAmountToDisplayCurrency(
+        loan.outstandingAmount, 
+        loan.currency, 
+        currentCurrency, 
+        exchangeRates, 
+        eurToUsdRate
+      );
+      const convertedExpectedLoss = convertLoanAmountToDisplayCurrency(
+        loan.metrics?.expectedLoss || 0, 
+        loan.currency, 
+        currentCurrency, 
+        exchangeRates, 
+        eurToUsdRate
+      );
+      
+      return {
+        name: loan.name,
+        x: convertedExpectedLoss / convertedOutstandingAmount * 100,
+        y: (loan.metrics?.roe || 0) * 100,
+        z: convertedOutstandingAmount / 1000000,
+        sector: loan.sector
+      };
+    });
     
     return { evaBySector, loanEvaData, roeVsRiskData };
-  };
+  }, [selectedPortfolio, currentCurrency, exchangeRates, eurToUsdRate]);
+  
+  // Calculate overview metrics from the selected portfolio's loans (already converted)
+  const overviewMetrics = useCallback(() => {
+    if (!selectedPortfolio || selectedPortfolio.loans.length === 0) {
+      return {
+        totalExposure: 0,
+        totalDrawn: 0,
+        totalUndrawn: 0,
+        evaSumIntrinsic: 0,
+        totalExpectedLoss: 0,
+        portfolioROE: 0,
+        weightedAveragePD: 0
+      };
+    }
+    
+    const loans = selectedPortfolio.loans; // These are already converted to display currency
+    
+    // Debug: Log the loan amounts to see if they're actually converted
+    console.log('[OVERVIEW] Loans in selectedPortfolio:', loans.map(loan => ({
+      name: loan.name,
+      originalAmount: loan.originalAmount,
+      currency: loan.currency
+    })));
+    
+    const totalExposure = loans.reduce((sum, loan) => sum + loan.originalAmount, 0);
+    const totalDrawn = loans.reduce((sum, loan) => sum + loan.drawnAmount, 0);
+    const totalUndrawn = loans.reduce((sum, loan) => sum + loan.undrawnAmount, 0);
+    const evaSumIntrinsic = loans.reduce((sum, loan) => sum + (loan.metrics?.evaIntrinsic || 0), 0);
+    const totalExpectedLoss = loans.reduce((sum, loan) => sum + (loan.metrics?.expectedLoss || 0), 0);
+    
+    // Calculate weighted average PD
+    const weightedAveragePD = totalExposure > 0 
+      ? loans.reduce((sum, loan) => sum + (loan.pd * loan.originalAmount), 0) / totalExposure 
+      : 0;
+    
+    // Calculate portfolio ROE (simplified - you might want to use the actual calculation)
+    const totalCapital = loans.reduce((sum, loan) => sum + (loan.metrics?.capitalConsumption || 0), 0);
+    const portfolioROE = totalCapital > 0 ? (evaSumIntrinsic / totalCapital) + 0.104 : 0.104; // Assuming 10.4% base
+    
+    const result = {
+      totalExposure,
+      totalDrawn,
+      totalUndrawn,
+      evaSumIntrinsic,
+      totalExpectedLoss,
+      portfolioROE,
+      weightedAveragePD
+    };
+    
+    // Debug: Log the calculated metrics
+    console.log('[OVERVIEW] Calculated metrics:', result);
+    
+    return result;
+  }, [selectedPortfolio]);
   
   const { evaBySector, loanEvaData, roeVsRiskData } = getChartData();
   
@@ -541,11 +779,21 @@ const Portfolios = () => {
                         </Badge>
                       </TableCell>
                       <TableCell>{portfolio.loanCount}</TableCell>
-                      <TableCell>{formatCurrency(portfolio.totalExposure)}</TableCell>
                       <TableCell>
-                        <span className={portfolio.metrics.evaSumIntrinsic >= 0 ? 'text-green-600' : 'text-red-600'}>
-                          {formatCurrency(portfolio.metrics.evaSumIntrinsic)}
-                        </span>
+                        {(() => {
+                          console.log('[PORTFOLIO TABLE] Portfolio:', portfolio.name, 'totalExposure:', portfolio.totalExposure, 'currency:', currentCurrency);
+                          return formatCurrencyUtil(portfolio.totalExposure, currentCurrency, { maximumFractionDigits: 0 });
+                        })()}
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          console.log('[PORTFOLIO TABLE] Portfolio:', portfolio.name, 'EVA:', portfolio.metrics.evaSumIntrinsic, 'currency:', currentCurrency);
+                          return (
+                            <span className={portfolio.metrics.evaSumIntrinsic >= 0 ? 'text-green-600' : 'text-red-600'}>
+                              {formatCurrencyUtil(portfolio.metrics.evaSumIntrinsic, currentCurrency, { maximumFractionDigits: 0 })}
+                            </span>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell>
                         {new Date(portfolio.createdDate).toLocaleDateString()}
@@ -601,10 +849,10 @@ const Portfolios = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">
-                    {formatCurrency(selectedPortfolio.metrics.totalExposure)}
+                    {formatCurrencyUtil(overviewMetrics().totalExposure, currentCurrency, { maximumFractionDigits: 0 })}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Drawn: {formatCurrency(selectedPortfolio.metrics.totalDrawn)}
+                    Drawn: {formatCurrencyUtil(overviewMetrics().totalDrawn, currentCurrency, { maximumFractionDigits: 0 })}
                   </p>
                 </CardContent>
               </Card>
@@ -612,14 +860,14 @@ const Portfolios = () => {
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Portfolio EVA</CardTitle>
-                  {selectedPortfolio.metrics.evaSumIntrinsic >= 0 ? 
+                  {overviewMetrics().evaSumIntrinsic >= 0 ? 
                     <TrendingUp className="h-4 w-4 text-green-600" /> : 
                     <TrendingDown className="h-4 w-4 text-red-600" />
                   }
                 </CardHeader>
                 <CardContent>
-                  <div className={`text-2xl font-bold ${selectedPortfolio.metrics.evaSumIntrinsic >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formatCurrency(selectedPortfolio.metrics.evaSumIntrinsic)}
+                  <div className={`text-2xl font-bold ${overviewMetrics().evaSumIntrinsic >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formatCurrencyUtil(overviewMetrics().evaSumIntrinsic, currentCurrency, { maximumFractionDigits: 0 })}
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Intrinsic value
@@ -634,7 +882,7 @@ const Portfolios = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">
-                    {(selectedPortfolio.metrics.portfolioROE * 100).toFixed(1)}%
+                    {(overviewMetrics().portfolioROE * 100).toFixed(1)}%
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Return on Equity
@@ -649,10 +897,10 @@ const Portfolios = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">
-                    {formatCurrency(selectedPortfolio.metrics.totalExpectedLoss)}
+                    {formatCurrencyUtil(overviewMetrics().totalExpectedLoss, currentCurrency, { maximumFractionDigits: 0 })}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Avg PD: {(selectedPortfolio.metrics.weightedAveragePD * 100).toFixed(2)}%
+                    Avg PD: {(overviewMetrics().weightedAveragePD * 100).toFixed(2)}%
                   </p>
                 </CardContent>
               </Card>
@@ -701,14 +949,17 @@ const Portfolios = () => {
                             </Link>
                           </TableCell>
                           <TableCell>{loan.clientName}</TableCell>
-                          <TableCell>{formatCurrency(loan.originalAmount)}</TableCell>
+                          <TableCell>{formatLoanAmount(loan.originalAmount, loan.currency)}</TableCell>
                           <TableCell>
                             <Badge variant={loan.status === 'active' ? 'default' : 'secondary'}>
                               {loan.status}
                             </Badge>
                           </TableCell>
                           <TableCell className={loan.metrics.evaIntrinsic >= 0 ? 'text-green-600' : 'text-red-600'}>
-                            {formatCurrency(loan.metrics.evaIntrinsic)}
+                            {(() => {
+                              console.log('[LOANS TABLE] Loan:', loan.name, 'EVA:', loan.metrics.evaIntrinsic, 'currency:', loan.currency);
+                              return formatLoanAmount(loan.metrics.evaIntrinsic, loan.currency);
+                            })()}
                           </TableCell>
                           <TableCell>
                             {(loan.metrics.roe * 100).toFixed(1)}%

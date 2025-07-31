@@ -21,7 +21,11 @@ export const CURRENCY_SYMBOLS: Record<Currency, string> = {
   DKK: 'kr',
   PLN: 'zł',
   CZK: 'Kč',
-  HUF: 'Ft'
+  HUF: 'Ft',
+  ZAR: 'R',
+  PKR: '₨',
+  THB: '฿',
+  MYR: 'RM'
 };
 
 // Currency names mapping
@@ -45,7 +49,11 @@ export const CURRENCY_NAMES: Record<Currency, string> = {
   DKK: 'Danish Krone',
   PLN: 'Polish Zloty',
   CZK: 'Czech Koruna',
-  HUF: 'Hungarian Forint'
+  HUF: 'Hungarian Forint',
+  ZAR: 'South African Rand',
+  PKR: 'Pakistani Rupee',
+  THB: 'Thai Baht',
+  MYR: 'Malaysian Ringgit'
 };
 
 /**
@@ -178,24 +186,52 @@ export const convertBetweenCurrencies = (
   eurToUsdRate: number = 1.0968
 ): number => {
   if (fromCurrency === toCurrency) return amount;
-  if (fromCurrency === 'EUR') {
-    // EUR to target
-    if (toCurrency === 'USD') return amount * eurToUsdRate;
-    if (rates[toCurrency]) return (amount * eurToUsdRate) * rates[toCurrency];
-  } else if (toCurrency === 'EUR') {
-    // fromCurrency to EUR
-    if (fromCurrency === 'USD') return amount / eurToUsdRate;
-    if (rates[fromCurrency]) return (amount / (eurToUsdRate * rates[fromCurrency]));
-  } else {
-    // fromCurrency to USD to toCurrency
-    let amountInUSD = amount;
-    if (fromCurrency !== 'USD') {
-      if (fromCurrency === 'EUR') amountInUSD = amount * eurToUsdRate;
-      else if (rates[fromCurrency]) amountInUSD = amount / rates[fromCurrency];
+  
+  // API rates are in format: 1 USD = X target_currency
+  // So rates[EUR] = 0.87 means 1 USD = 0.87 EUR
+  
+  if (fromCurrency === 'USD') {
+    // USD to any currency
+    if (rates[toCurrency]) {
+      return amount * rates[toCurrency];
     }
-    if (toCurrency === 'USD') return amountInUSD;
-    if (rates[toCurrency]) return amountInUSD * rates[toCurrency];
+  } else if (toCurrency === 'USD') {
+    // Any currency to USD
+    if (rates[fromCurrency]) {
+      return amount / rates[fromCurrency];
+    }
+  } else {
+    // fromCurrency to toCurrency via USD
+    let amountInUSD = amount;
+    if (rates[fromCurrency]) {
+      amountInUSD = amount / rates[fromCurrency]; // Convert to USD
+    }
+    if (rates[toCurrency]) {
+      return amountInUSD * rates[toCurrency]; // Convert from USD to target
+    }
   }
+  
   // Fallback: no conversion
   return amount;
+}; 
+
+/**
+ * Convert amount from loan currency to display currency
+ * This function handles the case where loan amounts are stored in their original currency
+ * and need to be converted to the display currency
+ */
+export const convertLoanAmountToDisplayCurrency = (
+  amount: number,
+  loanCurrency: Currency,
+  displayCurrency: Currency,
+  exchangeRates: Record<string, number>,
+  eurToUsdRate: number = 1.0968
+): number => {
+  // If currencies are the same, no conversion needed
+  if (loanCurrency === displayCurrency) {
+    return amount;
+  }
+  
+  // Use convertBetweenCurrencies for proper conversion
+  return convertBetweenCurrencies(amount, loanCurrency, displayCurrency, exchangeRates, eurToUsdRate);
 }; 

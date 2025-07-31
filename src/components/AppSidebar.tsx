@@ -1,5 +1,6 @@
 
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import {
   Sidebar,
   SidebarContent,
@@ -12,6 +13,7 @@ import {
   SidebarGroupContent,
   SidebarGroupLabel,
 } from '@/components/ui/sidebar';
+import AppearanceService from '@/services/AppearanceService';
 import {
   BarChart3,
   Home,
@@ -26,20 +28,50 @@ import {
   PieChartIcon,
   Briefcase,
   LineChart,
+  Palette,
 } from 'lucide-react';
 
 export function AppSidebar() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [appName, setAppName] = useState(AppearanceService.getInstance().getMainTitle());
+  const [appSubtitle, setAppSubtitle] = useState(AppearanceService.getInstance().getSubtitle());
+  const [appLogo, setAppLogo] = useState<string | null>(AppearanceService.getInstance().getLogo());
   
   const isActive = (path: string) => location.pathname === path;
+
+  // Listen for appearance updates
+  useEffect(() => {
+    const handleAppearanceUpdate = () => {
+      const service = AppearanceService.getInstance();
+      setAppName(service.getMainTitle());
+      setAppSubtitle(service.getSubtitle());
+      setAppLogo(service.getLogo());
+    };
+
+    window.addEventListener('appearance-updated', handleAppearanceUpdate);
+    return () => window.removeEventListener('appearance-updated', handleAppearanceUpdate);
+  }, []);
   
   return (
     <Sidebar>
       <SidebarHeader className="p-4">
         <div className="flex items-center">
-          <DollarSign className="h-8 w-8 text-sidebar-primary" />
-          <span className="text-xl font-bold ml-2 text-sidebar-foreground">Financify</span>
+          {appLogo ? (
+            <img 
+              src={appLogo} 
+              alt="App Logo" 
+              className="h-8 w-8 object-contain"
+            />
+          ) : (
+            <DollarSign className="h-8 w-8 text-sidebar-primary" />
+          )}
+          <div className="ml-2">
+            <div className="text-xl font-bold text-sidebar-foreground">{appName}</div>
+            {appSubtitle && (
+              <div className="text-xs text-sidebar-foreground/70">{appSubtitle}</div>
+            )}
+          </div>
         </div>
       </SidebarHeader>
       
@@ -133,6 +165,13 @@ export function AppSidebar() {
               </SidebarMenuItem>
               
               <SidebarMenuItem>
+                <SidebarMenuButton onClick={() => navigate('/appearance')} isActive={isActive('/appearance')}>
+                  <Palette />
+                  <span>Appearance</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              
+              <SidebarMenuItem>
                 <SidebarMenuButton onClick={() => navigate('/reports')} isActive={isActive('/reports')}>
                   <FileSpreadsheet />
                   <span>Reports</span>
@@ -145,7 +184,7 @@ export function AppSidebar() {
       
       <SidebarFooter className="p-4">
         <div className="text-xs text-sidebar-foreground/70">
-          Financify Portfolio Lens v1.0
+          {appName} {appSubtitle && `- ${appSubtitle}`} v1.0
         </div>
       </SidebarFooter>
     </Sidebar>

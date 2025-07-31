@@ -106,6 +106,8 @@ export const getPDFromParameters = (
   return 0.0125; // BB equivalent
 };
 
+
+
 // Helper function to get rating mapping (updated to support parameter-based PD)
 export const getRatingMapping = (loan: Loan, params: CalculationParameters, preferredRatingType?: RatingType): RatingMapping => {
   let spRating: SPRating;
@@ -266,6 +268,7 @@ export const calculateRAROC = (loan: Loan, params: CalculationParameters, prefer
 
 // Patch: calculateLoanMetrics
 export const calculateLoanMetrics = (loan: Loan, params: CalculationParameters, preferredRatingType?: RatingType): LoanMetrics => {
+  
   if (loan.type === 'revolver') {
     const ead = calculateRevolverEAD(loan);
     const rwa = ead * getRatingMapping(loan, params, preferredRatingType).riskWeight;
@@ -374,8 +377,12 @@ export const calculatePortfolioMetrics = (loans: Loan[], params: CalculationPara
     return sum + annualInterestIncome + annualCommitmentFee + upfrontFeesAmortized;
   }, 0);
   
-  const totalFundingCost = validLoans.reduce((sum, loan) => sum + params.fundingCost * loan.drawnAmount, 0);
-  const totalOperationalCost = validLoans.reduce((sum, loan) => sum + params.operationalCostRatio * loan.originalAmount, 0);
+  const totalFundingCost = validLoans.reduce((sum, loan) => {
+    return sum + params.fundingCost * loan.drawnAmount;
+  }, 0);
+  const totalOperationalCost = validLoans.reduce((sum, loan) => {
+    return sum + params.operationalCostRatio * loan.originalAmount;
+  }, 0);
   
   const portfolioProfitBeforeTax = totalAnnualIncome - totalFundingCost - totalOperationalCost - totalExpectedLoss;
   const portfolioProfitAfterTax = portfolioProfitBeforeTax * (1 - params.corporateTaxRate);
@@ -441,6 +448,7 @@ export const updateLoansWithNewParameters = (loans: Loan[], params: CalculationP
     const loanWithNewPD = updateLoanPDFromParameters(loan, params, preferredRatingType);
     
     // Recalculate all metrics with new parameters and PD
+    // Note: The calculateLoanMetrics function will use frozen costs if available
     const newMetrics = calculateLoanMetrics(loanWithNewPD, params, preferredRatingType);
     
     return {

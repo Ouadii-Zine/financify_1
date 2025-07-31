@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Loan, LoanType, LoanStatus, Currency, ClientType, PortfolioSummary, SPRating, S_P_RATING_MAPPINGS, LoanRatings, InternalRating, MoodysRating, FitchRating, RatingType } from '@/types/finance';
+import { Loan, LoanType, LoanStatus, Currency, ClientType, PortfolioSummary, SPRating, S_P_RATING_MAPPINGS, LoanRatings, InternalRating, MoodysRating, FitchRating, RatingType, FundingIndex } from '@/types/finance';
 import { convertToSPRating, getPDFromParameters } from '@/utils/financialCalculations';
 import LoanDataService from '@/services/LoanDataService';
 
@@ -16,6 +16,7 @@ import ClientTemplateService from '@/services/ClientTemplateService';
 import ParameterService from '@/services/ParameterService';
 import { Switch } from '@/components/ui/switch';
 import CurrencyService from '@/services/CurrencyService';
+import FundingIndexService from '@/services/FundingIndexService';
 
 interface LoanFormData {
   id?: string;
@@ -46,6 +47,7 @@ interface LoanFormData {
   
   margin: string;
   referenceRate: string;
+  fundingIndex?: string;
   upfrontFee?: string;
   commitmentFee?: string;
   agencyFee?: string;
@@ -99,6 +101,8 @@ const LoanNew = () => {
       if (updatedParameters.currency) {
         setCurrentCurrency(updatedParameters.currency);
       }
+      // Force re-render to update internal rating options
+      setParametersVersion(prev => prev + 1);
     };
     
     window.addEventListener('parameters-updated', handleParametersUpdated);
@@ -120,19 +124,20 @@ const LoanNew = () => {
     currency: currentCurrency,
     originalAmount: '1000000',
     outstandingAmount: '',
-    drawnAmount: '',
+    drawnAmount: '1000000', // Default to original amount for term loans
     undrawnAmount: '0',
     pd: '0.75', // Default PD for BB+ rating
     lgd: '45',
     ead: '',
     sector: 'Technology',
     country: 'France',
-    internalRating: 'BB+',
+    internalRating: 'BB+', // Will be updated to first available rating
     spRating: 'N/A',
     moodysRating: 'N/A',
     fitchRating: 'N/A',
     margin: '2',
     referenceRate: '3',
+    fundingIndex: 'EUR3M', // Will be updated based on currency
     upfrontFee: '0',
     commitmentFee: '0',
     agencyFee: '0',
@@ -151,13 +156,23 @@ const LoanNew = () => {
   
   const [formData, setFormData] = useState<LoanFormData>(defaultFormData);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [parametersVersion, setParametersVersion] = useState(0); // Force re-render when parameters change
   
   // Update form currency when currentCurrency changes
   useEffect(() => {
-    setFormData(prev => ({
-      ...prev,
-      currency: currentCurrency
-    }));
+    setFormData(prev => {
+      const updatedData = {
+        ...prev,
+        currency: currentCurrency
+      };
+      
+      // Set default funding index for the new currency
+      const fundingIndexService = FundingIndexService.getInstance();
+      const defaultIndex = fundingIndexService.getDefaultFundingIndexWithFallback(currentCurrency);
+      updatedData.fundingIndex = defaultIndex;
+      
+      return updatedData;
+    });
   }, [currentCurrency]);
   
   // Load portfolios on component mount
@@ -170,6 +185,32 @@ const LoanNew = () => {
       portfolioId: preSelectedPortfolioId || (portfolioSummaries.length > 0 ? portfolioSummaries.find(p => p.isDefault)?.id || portfolioSummaries[0].id : '')
     }));
   }, [preSelectedPortfolioId]);
+
+  // Update default internal rating when parameters change
+  useEffect(() => {
+    const parameters = ParameterService.loadParameters();
+    const availableInternalRatings = parameters.ratingPDMappings.internal.map(rating => rating.rating);
+    
+    if (availableInternalRatings.length > 0) {
+      setFormData(prev => {
+        // Check if current internal rating is still valid
+        const currentRating = prev.internalRating;
+        const isCurrentRatingValid = availableInternalRatings.includes(currentRating);
+        
+        return {
+          ...prev,
+          // If current rating is invalid or this is a new loan, use first available rating
+          internalRating: isCurrentRatingValid ? currentRating : availableInternalRatings[0]
+        };
+      });
+    } else {
+      // If no internal ratings available, set to N/A
+      setFormData(prev => ({
+        ...prev,
+        internalRating: 'N/A'
+      }));
+    }
+  }, [parametersVersion, isEditMode]);
   
   // Effect to load loan data for editing
   useEffect(() => {
@@ -216,6 +257,7 @@ const LoanNew = () => {
             fitchRating: loanToEdit.ratings?.fitch || 'N/A',
             margin: (loanToEdit.margin * 100).toString(),
             referenceRate: (loanToEdit.referenceRate * 100).toString(),
+            fundingIndex: loanToEdit.fundingIndex || 'EUR3M',
             upfrontFee: loanToEdit.fees.upfront.toString(),
             commitmentFee: loanToEdit.fees.commitment.toString(),
             agencyFee: loanToEdit.fees.agency.toString(),
@@ -257,7 +299,18 @@ const LoanNew = () => {
   };
 
   const handleSelectChange = (name: string, value: string) => {
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData(prev => {
+      const updatedData = { ...prev, [name]: value };
+      
+      // Auto-set default funding index when currency changes
+      if (name === 'currency') {
+        const fundingIndexService = FundingIndexService.getInstance();
+        const defaultIndex = fundingIndexService.getDefaultFundingIndexWithFallback(value as Currency);
+        updatedData.fundingIndex = defaultIndex;
+      }
+      
+      return updatedData;
+    });
   };
 
   // Function to calculate PD based on selected rating type and value
@@ -319,6 +372,10 @@ const LoanNew = () => {
         if (isNaN(drawnAmount)) drawnAmount = 0;
         if (isNaN(undrawnAmount)) undrawnAmount = 0;
       } else {
+        // For term loans, if drawnAmount is 0 or empty, use originalAmount
+        if (drawnAmount === 0 || isNaN(drawnAmount)) {
+          drawnAmount = parseFloat(formData.originalAmount);
+        }
         undrawnAmount = parseFloat(formData.undrawnAmount?.toString() || '0');
       }
 
@@ -341,6 +398,8 @@ const LoanNew = () => {
         }
       }
 
+
+      
       const preparedLoan: Loan = {
         id: loanId,
         name: uniqueName,
@@ -367,6 +426,7 @@ const LoanNew = () => {
         },
         margin: parseFloat(formData.margin.toString()) / 100,
         referenceRate: parseFloat(formData.referenceRate.toString()) / 100,
+        fundingIndex: formData.fundingIndex as FundingIndex,
         internalRating: formData.internalRating as SPRating, // Backward compatibility
         ratings: ratings, // New multi-rating system
         sector: formData.sector,
@@ -397,11 +457,10 @@ const LoanNew = () => {
       };
       
       if (isEditMode && formData.id) {
-        const deleteSuccess = loanDataService.deleteLoan(formData.id);
+        // Use the proper updateLoan method
+        const updateSuccess = loanDataService.updateLoan(formData.id, preparedLoan, ParameterService.loadParameters());
         
-        if (deleteSuccess) {
-          loanDataService.addLoan(preparedLoan, formData.portfolioId, ParameterService.loadParameters());
-          
+        if (updateSuccess) {
           toast({
             title: "Loan updated",
             description: `The loan "${preparedLoan.name}" has been successfully updated.`,
@@ -412,7 +471,7 @@ const LoanNew = () => {
             navigate(`/loans/${preparedLoan.id}`);
           }, 500);
         } else {
-          throw new Error("Failed to update loan - could not remove old version.");
+          throw new Error("Failed to update loan.");
         }
       } else {
         if (!isEditMode) {
@@ -460,11 +519,10 @@ const LoanNew = () => {
   };
 
   // Get available rating options
-  const getInternalRatingOptions = () => [
-    '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12',
-    'AAA', 'AA+', 'AA', 'AA-', 'A+', 'A', 'A-', 'BBB+', 'BBB', 'BBB-',
-    'BB+', 'BB', 'BB-', 'B+', 'B', 'B-', 'CCC+', 'CCC', 'CCC-', 'CC', 'C', 'D'
-  ];
+  const internalRatingOptions = React.useMemo(() => {
+    const parameters = ParameterService.loadParameters();
+    return parameters.ratingPDMappings.internal.map(rating => rating.rating);
+  }, [parametersVersion]); // Re-evaluate when parameters change
 
   const getSPRatingOptions = () => [
     'AAA', 'AA+', 'AA', 'AA-', 'A+', 'A', 'A-', 'BBB+', 'BBB', 'BBB-',
@@ -657,6 +715,106 @@ const LoanNew = () => {
               </div>
               
               <div className="space-y-2">
+                <Label htmlFor="fundingIndex">Funding Index</Label>
+                <Select
+                  value={formData.fundingIndex || ''}
+                  onValueChange={value => handleSelectChange('fundingIndex', value)}
+                >
+                  <SelectTrigger id="fundingIndex">
+                    <SelectValue placeholder="Select a funding index" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(() => {
+                      const fundingIndexService = FundingIndexService.getInstance();
+                      const recommendedIndices = fundingIndexService.getAvailableFundingIndicesWithFallback(formData.currency as Currency);
+                      const allIndices = fundingIndexService.getAllFundingIndicesData();
+                      const defaultIndex = fundingIndexService.getDefaultFundingIndexWithFallback(formData.currency as Currency);
+                      const hasSpecificIndices = fundingIndexService.hasSpecificFundingIndices(formData.currency as Currency);
+                      
+                      return (
+                        <>
+                          {/* Recommended Indices Section */}
+                          <div className="px-2 py-1.5 text-sm font-semibold text-muted-foreground border-b">
+                            Recommended for {formData.currency}
+                          </div>
+                          {recommendedIndices.map(index => {
+                            const indexData = fundingIndexService.getFundingIndexData(index);
+                            const isFallback = !hasSpecificIndices && indexData;
+                            
+                            return (
+                              <SelectItem key={index} value={index}>
+                                <div className="flex items-center justify-between w-full">
+                                  <span>{indexData?.name || index}</span>
+                                  <div className="flex items-center gap-2 ml-2">
+                                    <Badge variant="secondary" className="text-xs">
+                                      {indexData?.currentValue.toFixed(2)}%
+                                    </Badge>
+                                    {index === defaultIndex && (
+                                      <Badge variant="outline" className="text-xs">
+                                        {hasSpecificIndices ? 'Default' : 'Fallback'}
+                                      </Badge>
+                                    )}
+                                    {isFallback && (
+                                      <Badge variant="destructive" className="text-xs">Fallback</Badge>
+                                    )}
+                                  </div>
+                                </div>
+                              </SelectItem>
+                            );
+                          })}
+                          
+                          {/* All Indices Section */}
+                          <div className="px-2 py-1.5 text-sm font-semibold text-muted-foreground border-b mt-2">
+                            All Available Indices
+                          </div>
+                          {allIndices
+                            .filter(indexData => !recommendedIndices.includes(indexData.code))
+                            .map(indexData => {
+                              const isRecommended = recommendedIndices.includes(indexData.code);
+                              
+                              return (
+                                <SelectItem key={indexData.code} value={indexData.code}>
+                                  <div className="flex items-center justify-between w-full">
+                                    <div className="flex items-center gap-2">
+                                      <span>{indexData.name}</span>
+                                      <Badge variant="outline" className="text-xs">
+                                        {indexData.currency}
+                                      </Badge>
+                                    </div>
+                                    <div className="flex items-center gap-2 ml-2">
+                                      <Badge variant="secondary" className="text-xs">
+                                        {indexData.currentValue.toFixed(2)}%
+                                      </Badge>
+                                    </div>
+                                  </div>
+                                </SelectItem>
+                              );
+                            })}
+                        </>
+                      );
+                    })()}
+                  </SelectContent>
+                </Select>
+                {formData.fundingIndex && (() => {
+                  const fundingIndexService = FundingIndexService.getInstance();
+                  const indexData = fundingIndexService.getFundingIndexData(formData.fundingIndex as FundingIndex);
+                  const hasSpecificIndices = fundingIndexService.hasSpecificFundingIndices(formData.currency as Currency);
+                  
+                  if (indexData) {
+                    return (
+                      <p className="text-xs text-muted-foreground">
+                        Current rate: <strong>{indexData.currentValue.toFixed(2)}%</strong> - {indexData.description}
+                        {!hasSpecificIndices && (
+                          <span className="text-orange-600 font-medium"> (Using fallback index)</span>
+                        )}
+                      </p>
+                    );
+                  }
+                  return null;
+                })()}
+              </div>
+              
+              <div className="space-y-2">
                 <Label htmlFor="originalAmount">Original Amount *</Label>
                 <Input 
                   id="originalAmount" 
@@ -763,7 +921,7 @@ const LoanNew = () => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="N/A">N/A</SelectItem>
-                      {getInternalRatingOptions().map(rating => (
+                      {internalRatingOptions.map(rating => (
                         <SelectItem key={rating} value={rating}>{rating}</SelectItem>
                       ))}
                     </SelectContent>

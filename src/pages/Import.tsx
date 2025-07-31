@@ -34,6 +34,7 @@ import DynamicColumnsService, { DynamicColumn } from '../services/DynamicColumns
 import PortfolioService, { PORTFOLIOS_UPDATED_EVENT } from '../services/PortfolioService';
 import { defaultCalculationParameters } from '../data/sampleData';
 import { Loan, Portfolio, PortfolioSummary, ClientType, LoanRatings, InternalRating, SPRating, MoodysRating, FitchRating } from '../types/finance';
+import ParameterService from '../services/ParameterService';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { useNavigate } from 'react-router-dom';
@@ -462,8 +463,10 @@ const Import = () => {
     loan.fees = loan.fees || {};
     loan.fees.upfront = loan.fees.upfront || parseFloat(String(rawRow.upfrontFee || '0'));
     loan.fees.commitment = parseFloat(String(rawRow.commitmentFee || '0'));
-    loan.fees.agency = parseFloat(String(rawRow.agencyFee || '0'));
-    loan.fees.other = parseFloat(String(rawRow.otherFee || '0'));
+    loan.fees.agency = loan.fees.agency || parseFloat(String(rawRow.agencyFee || '0'));
+    loan.fees.other = loan.fees.other || parseFloat(String(rawRow.otherFee || '0'));
+
+
 
     console.log(`✅ Created loan:`, {
       id: loan.id,

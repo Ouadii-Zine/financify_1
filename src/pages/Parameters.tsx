@@ -704,7 +704,7 @@ const Parameters = () => {
             <CardHeader>
               <CardTitle>Risk Parameters</CardTitle>
               <CardDescription>
-                Parameters used in risk calculations and expected loss.
+                Parameters used in risk calculations and expected loss. Note: Funding costs and operational costs are frozen at loan creation time for new loans. Updated loans will use current parameters.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -789,6 +789,11 @@ const Parameters = () => {
                       <p className="text-sm text-muted-foreground mb-4">
                         Configure PD values for each {selectedRatingType === 'internal' ? 'Internal' : selectedRatingType === 'sp' ? 'S&P' : selectedRatingType === 'moodys' ? "Moody's" : 'Fitch'} rating. 
                         These values will be used for automatic PD calculation when loans use this rating type.
+                        {selectedRatingType === 'internal' && (
+                          <span className="block mt-2 text-green-700">
+                            💡 <strong>Internal ratings only:</strong> You can add new ratings or delete existing ones using the buttons below.
+                          </span>
+                        )}
                         <strong className="block mt-2 text-blue-700">
                           When you save parameters, all existing loans with {selectedRatingType === 'internal' ? 'Internal' : selectedRatingType === 'sp' ? 'S&P' : selectedRatingType === 'moodys' ? "Moody's" : 'Fitch'} ratings 
                           will have their PD values automatically updated.
@@ -799,63 +804,150 @@ const Parameters = () => {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Rating</TableHead>
-                            <TableHead className="text-right">PD (%)</TableHead>
-                            <TableHead className="text-center">Adjustment</TableHead>
+                    <TableHead className="text-right">PD (%)</TableHead>
+                    <TableHead className="text-center">Adjustment</TableHead>
+                    {selectedRatingType === 'internal' && (
+                      <TableHead className="text-center">Actions</TableHead>
+                    )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                          {parameters.ratingPDMappings[selectedRatingType]?.map((rating, index) => (
+                  {parameters.ratingPDMappings[selectedRatingType]?.map((rating, index) => (
                     <TableRow key={index}>
-                              <TableCell className="font-medium">
-                                {rating.rating}
+                      <TableCell className="font-medium">
+                        {selectedRatingType === 'internal' ? (
+                          <Input
+                            value={rating.rating}
+                            onChange={(e) => {
+                              const newMappings = { ...parameters.ratingPDMappings };
+                              newMappings[selectedRatingType][index].rating = e.target.value as InternalRating;
+                              setParameters({
+                                ...parameters, 
+                                ratingPDMappings: newMappings
+                              });
+                            }}
+                            className="w-24"
+                          />
+                        ) : (
+                          rating.rating
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
-                                <span className="font-mono">
-                                  {(rating.pd * 100).toFixed(4)}%
-                                </span>
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center justify-center space-x-2">
+                        <span className="font-mono">
+                          {(rating.pd * 100).toFixed(4)}%
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-center space-x-2">
                           <Slider 
                             min={0.0001} 
-                                    max={1.0} 
+                            max={1.0} 
                             step={0.0001} 
                             value={[rating.pd]} 
                             onValueChange={(values) => {
-                                      const newMappings = { ...parameters.ratingPDMappings };
-                                      newMappings[selectedRatingType][index].pd = values[0];
-                                      setParameters({
-                                        ...parameters, 
-                                        ratingPDMappings: newMappings
-                                      });
+                              const newMappings = { ...parameters.ratingPDMappings };
+                              newMappings[selectedRatingType][index].pd = values[0];
+                              setParameters({
+                                ...parameters, 
+                                ratingPDMappings: newMappings
+                              });
                             }} 
                             className="w-32"
                           />
-                                  <Input
-                                    type="number"
-                                    value={(rating.pd * 100).toFixed(4)}
-                                    onChange={(e) => {
-                                      const newPD = parseFloat(e.target.value) / 100;
-                                      if (!isNaN(newPD) && newPD >= 0 && newPD <= 1) {
-                                        const newMappings = { ...parameters.ratingPDMappings };
-                                        newMappings[selectedRatingType][index].pd = newPD;
-                                        setParameters({
-                                          ...parameters, 
-                                          ratingPDMappings: newMappings
-                                        });
-                                      }
-                                    }}
-                                    className="w-20 text-center text-xs"
-                                    step="0.0001"
-                                    min="0"
-                                    max="100"
-                                  />
+                          <Input
+                            type="number"
+                            value={(rating.pd * 100).toFixed(4)}
+                            onChange={(e) => {
+                              const newPD = parseFloat(e.target.value) / 100;
+                              if (!isNaN(newPD) && newPD >= 0 && newPD <= 1) {
+                                const newMappings = { ...parameters.ratingPDMappings };
+                                newMappings[selectedRatingType][index].pd = newPD;
+                                setParameters({
+                                  ...parameters, 
+                                  ratingPDMappings: newMappings
+                                });
+                              }
+                            }}
+                            className="w-20 text-center text-xs"
+                            step="0.0001"
+                            min="0"
+                            max="100"
+                          />
                         </div>
                       </TableCell>
+                      {selectedRatingType === 'internal' && (
+                        <TableCell className="text-center">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              if (window.confirm(`Are you sure you want to delete the rating "${rating.rating}"? This action cannot be undone.`)) {
+                                const newMappings = { ...parameters.ratingPDMappings };
+                                newMappings[selectedRatingType].splice(index, 1);
+                                setParameters({
+                                  ...parameters, 
+                                  ratingPDMappings: newMappings
+                                });
+                                
+                                toast({
+                                  title: "Rating Deleted",
+                                  description: `Internal rating "${rating.rating}" has been deleted.`,
+                                  variant: "default"
+                                });
+                              }
+                            }}
+                            className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
+              
+              {/* Add new rating button - only for internal ratings */}
+              {selectedRatingType === 'internal' && (
+                <div className="flex justify-center mt-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const newMappings = { ...parameters.ratingPDMappings };
+                      const existingRatings = newMappings[selectedRatingType].map(r => r.rating);
+                      let newRatingName = `NEW${newMappings[selectedRatingType].length + 1}`;
+                      let counter = 1;
+                      
+                      // Ensure unique rating name
+                      while (existingRatings.includes(newRatingName as InternalRating)) {
+                        newRatingName = `NEW${newMappings[selectedRatingType].length + 1 + counter}`;
+                        counter++;
+                      }
+                      
+                      const newRating = {
+                        rating: newRatingName as InternalRating,
+                        pd: 0.01 // Default 1% PD
+                      };
+                      newMappings[selectedRatingType].push(newRating);
+                      setParameters({
+                        ...parameters, 
+                        ratingPDMappings: newMappings
+                      });
+                      
+                      toast({
+                        title: "Rating Added",
+                        description: `New internal rating "${newRatingName}" added with default PD of 1%.`,
+                        variant: "default"
+                      });
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    <PlusCircle className="h-4 w-4" />
+                    Add New Rating
+                  </Button>
+                </div>
+              )}
                     </div>
                   </CollapsibleContent>
                 </Collapsible>

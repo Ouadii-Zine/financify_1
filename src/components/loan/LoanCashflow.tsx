@@ -6,7 +6,7 @@ import ParameterService from '@/services/ParameterService';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, BarChart, Bar } from 'recharts';
-import { formatCurrency, convertCurrency } from '@/utils/currencyUtils';
+import { formatCurrency, convertCurrency, convertLoanAmountToDisplayCurrency } from '@/utils/currencyUtils';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 
 const CASHFLOW_TYPES = [
@@ -64,12 +64,13 @@ function generateTermLoanContractualCashFlows(loan: Loan): CashFlow[] {
   }
   if (periods[periods.length - 1].getTime() !== end.getTime()) periods.push(end);
   const N = periods.length;
-  // Drawdown initial
+  // Drawdown initial - use drawnAmount, fallback to originalAmount if drawnAmount is 0
+  const initialDrawdownAmount = loan.drawnAmount > 0 ? loan.drawnAmount : loan.originalAmount;
   flows.push({
     id: 'drawdown-1',
     date: start.toISOString().split('T')[0],
     type: 'drawdown',
-    amount: loan.originalAmount,
+    amount: initialDrawdownAmount,
     isManual: false,
     description: 'Initial drawdown'
   });
@@ -87,9 +88,9 @@ function generateTermLoanContractualCashFlows(loan: Loan): CashFlow[] {
   // Amortissement
   let principalSchedule = Array(N).fill(0);
   if (amortType === 'inFine') {
-    principalSchedule[N - 1] = loan.originalAmount;
+    principalSchedule[N - 1] = loan.drawnAmount;
   } else if (amortType === 'constant') {
-    const perPeriod = loan.originalAmount / N;
+    const perPeriod = loan.drawnAmount / N;
     for (let i = grace; i < N; i++) principalSchedule[i] = perPeriod;
   } else if (amortType === 'annuity') {
     // r = taux périodique
@@ -100,8 +101,8 @@ function generateTermLoanContractualCashFlows(loan: Loan): CashFlow[] {
     else if (freq === 'semiannual') periodsPerYear = 2;
     const r = annualRate / periodsPerYear;
     const n = N - grace;
-    const annuity = loan.originalAmount * r / (1 - Math.pow(1 + r, -n));
-    let outstanding = loan.originalAmount;
+    const annuity = loan.drawnAmount * r / (1 - Math.pow(1 + r, -n));
+    let outstanding = loan.drawnAmount;
     for (let i = 0; i < N; i++) {
       if (i < grace) continue;
       const interest = outstanding * r;
@@ -111,7 +112,7 @@ function generateTermLoanContractualCashFlows(loan: Loan): CashFlow[] {
     }
   }
   // Générer les cash flows d'intérêts et de principal
-  let outstanding = loan.originalAmount;
+  let outstanding = loan.drawnAmount > 0 ? loan.drawnAmount : loan.originalAmount;
   for (let i = 0; i < N; i++) {
     const date = periods[i].toISOString().split('T')[0];
     // Intérêts
@@ -294,6 +295,7 @@ const LoanCashflow: React.FC = () => {
   const [currentCurrency, setCurrentCurrency] = useState<Currency>('USD');
   const [currentExchangeRate, setCurrentExchangeRate] = useState<number>(1.0);
   const [eurToUsdRate, setEurToUsdRate] = useState<number>(1.0968);
+  const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({ USD: 1 });
   const [isTableOpen, setIsTableOpen] = useState(true);
   const [stressSubType, setStressSubType] = useState<'DEFAULT' | 'LIQUIDITY_CRISIS' | 'INTEREST_SHOCK'>('DEFAULT');
   const [defaultVars, setDefaultVars] = useState(DEFAULT_STRESS_VARS);
@@ -310,11 +312,13 @@ const LoanCashflow: React.FC = () => {
       if (parameters.exchangeRate) {
         setCurrentExchangeRate(parameters.exchangeRate);
       }
-      // Toujours récupérer le taux EUR pour la conversion
+      // Récupérer tous les taux de change
       try {
         const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
         if (response.ok) {
           const data = await response.json();
+
+          setExchangeRates(data.rates || { USD: 1 });
           const eurRate = data.rates?.EUR;
           if (eurRate) {
             setEurToUsdRate(eurRate);
@@ -322,6 +326,7 @@ const LoanCashflow: React.FC = () => {
         }
       } catch (error) {
         setEurToUsdRate(0.9689);
+        setExchangeRates({ USD: 1, EUR: 0.9689 });
       }
     };
     loadCurrencySettings();
@@ -334,11 +339,13 @@ const LoanCashflow: React.FC = () => {
       if (parameters.exchangeRate) {
         setCurrentExchangeRate(parameters.exchangeRate);
       }
-      // Mettre à jour le taux EUR
+      // Mettre à jour tous les taux de change
       try {
         const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
         if (response.ok) {
           const data = await response.json();
+
+          setExchangeRates(data.rates || { USD: 1 });
           const eurRate = data.rates?.EUR;
           if (eurRate) {
             setEurToUsdRate(eurRate);
@@ -388,7 +395,7 @@ const LoanCashflow: React.FC = () => {
       const baseChart = (() => {
         // Grouper tous les cash flows par date
         const grouped: Record<string, { date: string; interest: number; principal: number; outstanding: number }> = {};
-        let outstanding = loan.originalAmount || 0;
+        let outstanding = loan.drawnAmount || 0;
         (Array.isArray(flows) ? flows : []).forEach(cf => {
           if (!grouped[cf.date]) {
             grouped[cf.date] = { date: cf.date, interest: 0, principal: 0, outstanding };
@@ -407,9 +414,9 @@ const LoanCashflow: React.FC = () => {
           .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
           .map(row => ({
             ...row,
-            interest: convertCurrency(row.interest, currentCurrency, currentExchangeRate, eurToUsdRate),
-            principal: convertCurrency(row.principal, currentCurrency, currentExchangeRate, eurToUsdRate),
-            outstanding: convertCurrency(row.outstanding, currentCurrency, currentExchangeRate, eurToUsdRate)
+            interest: convertLoanAmountToDisplayCurrency(row.interest, loan?.currency || 'USD', currentCurrency, exchangeRates, eurToUsdRate),
+            principal: convertLoanAmountToDisplayCurrency(row.principal, loan?.currency || 'USD', currentCurrency, exchangeRates, eurToUsdRate),
+            outstanding: convertLoanAmountToDisplayCurrency(row.outstanding, loan?.currency || 'USD', currentCurrency, exchangeRates, eurToUsdRate)
           }));
       })();
       // Find the crisis date (first cashflow date)
@@ -421,7 +428,7 @@ const LoanCashflow: React.FC = () => {
       // Apply the jump at the crisis date (add only stressedDrawings, not liquidity gap)
       return baseChart.map(row => {
         if (row.date === crisisDate) {
-          return { ...row, outstanding: row.outstanding + convertCurrency(stressedDrawings, currentCurrency, currentExchangeRate, eurToUsdRate) };
+          return { ...row, outstanding: row.outstanding + convertLoanAmountToDisplayCurrency(stressedDrawings, loan?.currency || 'USD', currentCurrency, exchangeRates, eurToUsdRate) };
         }
         return row;
       });
@@ -429,7 +436,7 @@ const LoanCashflow: React.FC = () => {
     // Default: use existing logic
     // Grouper tous les cash flows par date
     const grouped: Record<string, { date: string; interest: number; principal: number; outstanding: number }> = {};
-    let outstanding = loan.originalAmount || 0;
+    let outstanding = loan.drawnAmount || 0;
     (Array.isArray(flows) ? flows : []).forEach(cf => {
       if (!grouped[cf.date]) {
         grouped[cf.date] = { date: cf.date, interest: 0, principal: 0, outstanding };
@@ -449,11 +456,11 @@ const LoanCashflow: React.FC = () => {
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
       .map(row => ({
         ...row,
-        interest: convertCurrency(row.interest, currentCurrency, currentExchangeRate, eurToUsdRate),
-        principal: convertCurrency(row.principal, currentCurrency, currentExchangeRate, eurToUsdRate),
-        outstanding: convertCurrency(row.outstanding, currentCurrency, currentExchangeRate, eurToUsdRate)
+        interest: convertLoanAmountToDisplayCurrency(row.interest, loan?.currency || 'USD', currentCurrency, exchangeRates, eurToUsdRate),
+        principal: convertLoanAmountToDisplayCurrency(row.principal, loan?.currency || 'USD', currentCurrency, exchangeRates, eurToUsdRate),
+        outstanding: convertLoanAmountToDisplayCurrency(row.outstanding, loan?.currency || 'USD', currentCurrency, exchangeRates, eurToUsdRate)
       }));
-  }, [flows, loan, currentCurrency, currentExchangeRate, eurToUsdRate, selectedType, stressSubType, liquidityVars, flows]);
+      }, [flows, loan, currentCurrency, exchangeRates, eurToUsdRate, selectedType, stressSubType, liquidityVars, flows]);
   // For Interest & Principal Payments chart, recalculate after crisis for liquidity crisis scenario
   const interestPrincipalChartData = useMemo(() => {
     if (!loan) return [];
@@ -518,8 +525,8 @@ const LoanCashflow: React.FC = () => {
         }
         return {
           date: date.toISOString().split('T')[0],
-          interest: convertCurrency(interest, currentCurrency, currentExchangeRate, eurToUsdRate),
-          principal: convertCurrency(principal, currentCurrency, currentExchangeRate, eurToUsdRate)
+          interest: convertLoanAmountToDisplayCurrency(interest, loan?.currency || 'USD', currentCurrency, exchangeRates, eurToUsdRate),
+          principal: convertLoanAmountToDisplayCurrency(principal, loan?.currency || 'USD', currentCurrency, exchangeRates, eurToUsdRate)
         };
       });
       return chartRows;
@@ -542,10 +549,10 @@ const LoanCashflow: React.FC = () => {
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
       .map(row => ({
         ...row,
-        interest: convertCurrency(row.interest, currentCurrency, currentExchangeRate, eurToUsdRate),
-        principal: convertCurrency(row.principal, currentCurrency, currentExchangeRate, eurToUsdRate)
+        interest: convertLoanAmountToDisplayCurrency(row.interest, loan?.currency || 'USD', currentCurrency, exchangeRates, eurToUsdRate),
+        principal: convertLoanAmountToDisplayCurrency(row.principal, loan?.currency || 'USD', currentCurrency, exchangeRates, eurToUsdRate)
       }));
-  }, [flows, loan, currentCurrency, currentExchangeRate, eurToUsdRate, selectedType, stressSubType, liquidityVars]);
+      }, [flows, loan, currentCurrency, exchangeRates, eurToUsdRate, selectedType, stressSubType, liquidityVars]);
   if (!loan) return <div>Loan not found</div>;
   const renderStressVars = () => {
     if (selectedType !== 'stress') return null;
@@ -671,7 +678,7 @@ const LoanCashflow: React.FC = () => {
                     <TableCell>{cf.date}</TableCell>
                     <TableCell>{cf.type}</TableCell>
                     <TableCell className="text-right">{formatCurrency(
-                      convertCurrency(cf.amount, currentCurrency, currentExchangeRate, eurToUsdRate),
+                      convertLoanAmountToDisplayCurrency(cf.amount, loan?.currency || 'USD', currentCurrency, exchangeRates, eurToUsdRate),
                       currentCurrency
                     )}</TableCell>
                     <TableCell>{cf.description || '-'}</TableCell>

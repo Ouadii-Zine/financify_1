@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/table';
 import { Separator } from '@/components/ui/separator';
 import { defaultCalculationParameters } from '@/data/sampleData';
+import FundingIndices from '@/components/FundingIndices';
 
 const Documentation = () => {
   return (
@@ -23,6 +24,7 @@ const Documentation = () => {
           <TabsTrigger value="formulas">Formules Financières</TabsTrigger>
           <TabsTrigger value="models">Modèles de Risque</TabsTrigger>
           <TabsTrigger value="parameters">Paramètres</TabsTrigger>
+          <TabsTrigger value="funding-indices">Funding Indices</TabsTrigger>
           <TabsTrigger value="glossary">Glossaire</TabsTrigger>
         </TabsList>
         
@@ -427,6 +429,10 @@ const Documentation = () => {
               </Table>
             </CardContent>
           </Card>
+        </TabsContent>
+        
+        <TabsContent value="funding-indices">
+          <FundingIndices />
         </TabsContent>
         
         <TabsContent value="glossary">

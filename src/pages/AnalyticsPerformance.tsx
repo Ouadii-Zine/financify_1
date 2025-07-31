@@ -19,7 +19,7 @@ import { TrendingUp } from 'lucide-react';
 import { samplePortfolio, defaultCalculationParameters } from '@/data/sampleData';
 import { calculatePortfolioMetrics, calculateLoanMetrics } from '@/utils/financialCalculations';
 import ParameterService from '@/services/ParameterService';
-import { formatCurrency as formatCurrencyUtil, convertCurrency, CURRENCY_SYMBOLS } from '@/utils/currencyUtils';
+import { formatCurrency as formatCurrencyUtil, convertCurrency, convertLoanAmountToDisplayCurrency, CURRENCY_SYMBOLS } from '@/utils/currencyUtils';
 import { Currency } from '@/types/finance';
 
 const AnalyticsPerformance = () => {
@@ -27,6 +27,7 @@ const AnalyticsPerformance = () => {
   const [currentCurrency, setCurrentCurrency] = useState<Currency>('USD');
   const [currentExchangeRate, setCurrentExchangeRate] = useState<number>(1.0);
   const [eurToUsdRate, setEurToUsdRate] = useState<number>(1.0968);
+  const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({ USD: 1 });
 
   useEffect(() => {
     // Charger la configuration de la devise
@@ -38,11 +39,12 @@ const AnalyticsPerformance = () => {
       if (parameters.exchangeRate) {
         setCurrentExchangeRate(parameters.exchangeRate);
       }
-      // Toujours récupérer le taux EUR pour la conversion
+      // Récupérer tous les taux de change
       try {
         const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
         if (response.ok) {
           const data = await response.json();
+          setExchangeRates(data.rates || { USD: 1 });
           const eurRate = data.rates?.EUR;
           if (eurRate) {
             setEurToUsdRate(eurRate);
@@ -50,6 +52,7 @@ const AnalyticsPerformance = () => {
         }
       } catch (error) {
         setEurToUsdRate(0.9689);
+        setExchangeRates({ USD: 1, EUR: 0.9689 });
       }
     };
     loadCurrencySettings();
@@ -62,11 +65,12 @@ const AnalyticsPerformance = () => {
       if (parameters.exchangeRate) {
         setCurrentExchangeRate(parameters.exchangeRate);
       }
-      // Mettre à jour le taux EUR
+      // Mettre à jour tous les taux de change
       try {
         const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
         if (response.ok) {
           const data = await response.json();
+          setExchangeRates(data.rates || { USD: 1 });
           const eurRate = data.rates?.EUR;
           if (eurRate) {
             setEurToUsdRate(eurRate);
@@ -82,7 +86,7 @@ const AnalyticsPerformance = () => {
 
   // Fonction utilitaire pour formater la devise
   const formatCurrency = (value) => {
-    const convertedValue = convertCurrency(value, currentCurrency, currentExchangeRate, eurToUsdRate);
+    const convertedValue = convertLoanAmountToDisplayCurrency(value, 'EUR', currentCurrency, exchangeRates, eurToUsdRate);
     return formatCurrencyUtil(convertedValue, currentCurrency, { maximumFractionDigits: 0 });
   };
 
