@@ -45,7 +45,7 @@ import {
   Info
 } from 'lucide-react';
 import { defaultCalculationParameters } from '@/data/sampleData';
-import { calculatePortfolioMetrics, calculateLoanMetrics } from '@/utils/financialCalculations';
+import { calculatePortfolioMetrics, calculateLoanMetrics, getTotalInterestRate } from '@/utils/financialCalculations';
 import { Loan, PortfolioMetrics, PortfolioSummary, Currency } from '@/types/finance';
 import LoanDataService, { LOANS_UPDATED_EVENT } from '@/services/LoanDataService';
 import PortfolioService, { PORTFOLIOS_UPDATED_EVENT } from '@/services/PortfolioService';
@@ -230,10 +230,12 @@ const AnalyticsEva = () => {
       let commission = 0;
       let fees = loan.fees.upfront + loan.fees.agency + loan.fees.other;
       if (loan.type === 'revolver') {
-        interest = (loan.margin + loan.referenceRate) * loan.drawnAmount;
+        const currentParams = ParameterService.loadParameters();
+        interest = getTotalInterestRate(loan, currentParams) * loan.drawnAmount;
         commission = loan.fees.commitment * loan.undrawnAmount;
       } else {
-        interest = (loan.margin + loan.referenceRate) * loan.originalAmount;
+        const currentParams = ParameterService.loadParameters();
+        interest = getTotalInterestRate(loan, currentParams) * loan.originalAmount;
         commission = loan.fees.commitment * loan.originalAmount;
       }
       return sum + interest + commission + fees;
@@ -280,7 +282,7 @@ const AnalyticsEva = () => {
     raroc: loan.metrics?.raroc || 0,
     margin: loan.margin,
     referenceRate: loan.referenceRate,
-    totalRate: loan.margin + loan.referenceRate,
+    totalRate: getTotalInterestRate(loan, ParameterService.loadParameters()),
     rwaIntensity: ((loan.metrics?.rwa || 0) / loan.originalAmount) * 100,
     capitalIntensity: ((loan.metrics?.capitalConsumption || 0) / loan.originalAmount) * 100,
     elIntensity: ((loan.metrics?.expectedLoss || 0) / loan.originalAmount) * 100

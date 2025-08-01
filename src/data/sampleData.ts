@@ -190,6 +190,7 @@ export const sampleLoans: Loan[] = [
     id: '1',
     name: 'Tech Expansion Loan',
     clientName: 'TechCorp Inc.',
+    portfolioId: 'default',
     type: 'term',
     status: 'active',
     startDate: '2023-01-15',
@@ -210,6 +211,13 @@ export const sampleLoans: Loan[] = [
     },
     margin: 0.025,
     referenceRate: 0.015,
+    fundingIndex: 'EUR3M',
+    ratings: {
+      internal: 'BBB',
+      sp: 'BBB',
+      moodys: 'Baa2',
+      fitch: 'BBB'
+    },
     internalRating: 'BBB',
     sector: 'Technology',
     country: 'France',
@@ -260,6 +268,7 @@ export const sampleLoans: Loan[] = [
     id: '2',
     name: 'Retail Expansion Facility',
     clientName: 'RetailGroup SA',
+    portfolioId: 'default',
     type: 'revolver',
     status: 'active',
     startDate: '2022-08-20',
@@ -280,6 +289,13 @@ export const sampleLoans: Loan[] = [
     },
     margin: 0.03,
     referenceRate: 0.015,
+    fundingIndex: 'EUR3M',
+    ratings: {
+      internal: 'BB',
+      sp: 'BB',
+      moodys: 'Ba2',
+      fitch: 'BB'
+    },
     internalRating: 'BB',
     sector: 'Retail',
     country: 'Germany',

@@ -8,6 +8,7 @@ import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, BarChart, Bar } from 'recharts';
 import { formatCurrency, convertCurrency, convertLoanAmountToDisplayCurrency } from '@/utils/currencyUtils';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import { getTotalInterestRate } from '@/utils/financialCalculations';
 
 const CASHFLOW_TYPES = [
   { key: 'contractual', label: 'Contractual' },
@@ -94,7 +95,8 @@ function generateTermLoanContractualCashFlows(loan: Loan): CashFlow[] {
     for (let i = grace; i < N; i++) principalSchedule[i] = perPeriod;
   } else if (amortType === 'annuity') {
     // r = taux périodique
-    const annualRate = loan.margin + loan.referenceRate;
+    const currentParams = ParameterService.loadParameters();
+    const annualRate = getTotalInterestRate(loan, currentParams);
     let periodsPerYear = 1;
     if (freq === 'monthly') periodsPerYear = 12;
     else if (freq === 'quarterly') periodsPerYear = 4;
@@ -117,7 +119,8 @@ function generateTermLoanContractualCashFlows(loan: Loan): CashFlow[] {
     const date = periods[i].toISOString().split('T')[0];
     // Intérêts
     if (i >= grace) {
-      const interest = outstanding * (loan.margin + loan.referenceRate) * getYearFraction(freq);
+      const currentParams = ParameterService.loadParameters();
+      const interest = outstanding * getTotalInterestRate(loan, currentParams) * getYearFraction(freq);
       flows.push({
         id: `interest-${i + 1}`,
         date,
@@ -265,11 +268,13 @@ function generateTermLoanStressCashFlows(
     ];
   } else if (subType === 'INTEREST_SHOCK') {
     const interestShock = interestShockVars.interestShock;
+    const currentParams = ParameterService.loadParameters();
+    const totalRate = getTotalInterestRate(loan, currentParams);
     combined = baseFlows.map(cf =>
       cf.type === 'interest'
         ? {
             ...cf,
-            amount: cf.amount * (1 + interestShock / (loan.margin + loan.referenceRate)),
+            amount: cf.amount * (1 + interestShock / totalRate),
             description: (cf.description || '') + ` (Interest shock: +${interestShock * 100}bps)`
           }
         : cf
@@ -499,7 +504,8 @@ const LoanCashflow: React.FC = () => {
         if (freq === 'monthly') periodsPerYear = 12;
         else if (freq === 'quarterly') periodsPerYear = 4;
         else if (freq === 'semiannual') periodsPerYear = 2;
-        const r = (loan.margin + loan.referenceRate) / periodsPerYear;
+        const currentParams = ParameterService.loadParameters();
+        const r = getTotalInterestRate(loan, currentParams) / periodsPerYear;
         const n = N - grace;
         const annuity = outstanding * r / (1 - Math.pow(1 + r, -n));
         let out = outstanding;
@@ -516,7 +522,8 @@ const LoanCashflow: React.FC = () => {
       const chartRows = periods.map((date, i) => {
         let interest = 0;
         if (i >= grace) {
-          interest = out * (loan.margin + loan.referenceRate) * getYearFraction(freq);
+          const currentParams = ParameterService.loadParameters();
+          interest = out * getTotalInterestRate(loan, currentParams) * getYearFraction(freq);
         }
         let principal = 0;
         if (principalSchedule[i] > 0) {

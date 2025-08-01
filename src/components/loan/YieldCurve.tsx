@@ -10,13 +10,15 @@ import {
   Legend
 } from 'recharts';
 import { Loan } from '@/types/finance';
+import { getTotalInterestRate } from '@/utils/financialCalculations';
+import ParameterService from '@/services/ParameterService';
 
 interface YieldCurveProps {
   loan: Loan;
 }
 
 // Generate yield curve data points
-const generateYieldCurveData = (loan: Loan) => {
+const generateYieldCurveData = (loan: Loan, currentParams: any) => {
   const startDate = new Date(loan.startDate);
   const endDate = new Date(loan.endDate);
   const loanDurationMonths = Math.ceil((endDate.getTime() - startDate.getTime()) / (30 * 24 * 60 * 60 * 1000));
@@ -25,7 +27,7 @@ const generateYieldCurveData = (loan: Loan) => {
   const currentDate = new Date(startDate);
   
   // Base yield components
-  const baseYield = loan.margin + loan.referenceRate;
+  const baseYield = getTotalInterestRate(loan, currentParams);
   const upfrontFeesAnnualized = (loan.fees.upfront + loan.fees.agency + loan.fees.other) / 
                                (loanDurationMonths / 12) / loan.drawnAmount;
   const commitmentFeeYield = loan.fees.commitment * (loan.undrawnAmount / loan.drawnAmount);
@@ -73,7 +75,8 @@ const generateYieldCurveData = (loan: Loan) => {
 };
 
 const YieldCurve: React.FC<YieldCurveProps> = ({ loan }) => {
-  const yieldData = generateYieldCurveData(loan);
+  const currentParams = ParameterService.loadParameters();
+  const yieldData = generateYieldCurveData(loan, currentParams);
   
   // Format values for display
   const formatPercent = (value: number) => `${value.toFixed(2)}%`;
@@ -89,9 +92,9 @@ const YieldCurve: React.FC<YieldCurveProps> = ({ loan }) => {
           </p>
         </div>
         <div>
-          <p className="text-sm text-muted-foreground">Base Rate + Margin</p>
+          <p className="text-sm text-muted-foreground">Total Interest Rate</p>
           <p className="text-lg font-bold">
-            {formatPercent((loan.referenceRate + loan.margin) * 100)}
+            {formatPercent(getTotalInterestRate(loan, currentParams) * 100)}
           </p>
         </div>
         <div>
@@ -126,7 +129,7 @@ const YieldCurve: React.FC<YieldCurveProps> = ({ loan }) => {
               formatter={(value: number, name: string) => [
                 formatPercent(value),
                 name === 'effectiveYield' ? 'Effective Yield' :
-                name === 'baseYield' ? 'Base Yield' :
+                name === 'baseYield' ? 'Total Interest Rate' :
                 name === 'feeComponent' ? 'Fee Component' :
                 name === 'commitmentComponent' ? 'Commitment Fee' :
                 'Risk Adjustment'
@@ -148,7 +151,7 @@ const YieldCurve: React.FC<YieldCurveProps> = ({ loan }) => {
               stroke="#00C48C" 
               strokeWidth={2}
               strokeDasharray="5 5"
-              name="Base Yield (Margin + Ref Rate)"
+              name="Total Interest Rate"
               dot={false}
             />
             <Line 
@@ -179,9 +182,9 @@ const YieldCurve: React.FC<YieldCurveProps> = ({ loan }) => {
             <div className="flex justify-between items-center">
               <div className="flex items-center">
                 <div className="w-3 h-3 bg-financial-green rounded mr-2"></div>
-                <span>Base Yield (Rate + Margin)</span>
+                <span>Total Interest Rate</span>
               </div>
-              <span className="font-mono">{formatPercent((loan.referenceRate + loan.margin) * 100)}</span>
+              <span className="font-mono">{formatPercent(getTotalInterestRate(loan, currentParams) * 100)}</span>
             </div>
             <div className="flex justify-between items-center">
               <div className="flex items-center">

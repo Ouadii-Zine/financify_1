@@ -44,7 +44,7 @@ import {
 } from 'lucide-react';
 import { sampleLoans, defaultCalculationParameters } from '../data/sampleData';
 import { Loan, CashFlow, Currency } from '../types/finance';
-import { calculateLoanMetrics } from '../utils/financialCalculations';
+import { calculateLoanMetrics, getTotalInterestRate, getCurrentFundingIndexRate } from '../utils/financialCalculations';
 import LoanDataService from '../services/LoanDataService';
 import ClientTemplateService from '../services/ClientTemplateService';
 import { toast } from '@/hooks/use-toast';
@@ -1032,16 +1032,32 @@ const LoanDetail = () => {
                   <h3 className="text-lg font-semibold mb-3">Yield</h3>
                   <div className="space-y-2">
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Margin</span>
-                      <span className="font-medium">{formatPercent(displayLoan.margin)}</span>
-                    </div>
-                    <div className="flex justify-between">
                       <span className="text-muted-foreground">Reference Rate</span>
                       <span className="font-medium">{formatPercent(displayLoan.referenceRate)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">All-in Rate</span>
-                      <span className="font-medium">{formatPercent(displayLoan.margin + displayLoan.referenceRate)}</span>
+                      <span className="text-muted-foreground">Funding Index Rate</span>
+                      <span className="font-medium">{formatPercent(getCurrentFundingIndexRate(displayLoan))}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Margin</span>
+                      <span className="font-medium">{formatPercent(displayLoan.margin)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Operational Costs</span>
+                      <span className="font-medium">{formatPercent(ParameterService.loadParameters().operationalCostRatio)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Capital Costs (EVA)</span>
+                      <span className="font-medium">{formatPercent((ParameterService.loadParameters().targetROE * ParameterService.loadParameters().capitalRatio))}</span>
+                    </div>
+                    <Separator />
+                    <div className="flex justify-between font-semibold">
+                      <span>Total Interest Rate</span>
+                      <span>{formatPercent(getTotalInterestRate(displayLoan, ParameterService.loadParameters()))}</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Total = {formatPercent(displayLoan.referenceRate)} + {formatPercent(getCurrentFundingIndexRate(displayLoan))} + {formatPercent(displayLoan.margin)} + {formatPercent(ParameterService.loadParameters().operationalCostRatio)} + {formatPercent(ParameterService.loadParameters().targetROE * ParameterService.loadParameters().capitalRatio)} = {formatPercent(getTotalInterestRate(displayLoan, ParameterService.loadParameters()))}
                     </div>
                   </div>
                 </div>
@@ -1138,3 +1154,4 @@ const LoanDetail = () => {
 };
 
 export default LoanDetail;
+

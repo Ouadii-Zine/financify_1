@@ -10,8 +10,10 @@ import {
   LoanRatings,
   MOODYS_TO_SP_MAPPING,
   FITCH_TO_SP_MAPPING,
-  INTERNAL_TO_SP_MAPPING
+  INTERNAL_TO_SP_MAPPING,
+  FundingIndex
 } from '../types/finance';
+import FundingIndexService from '../services/FundingIndexService';
 
 // Helper function to get available rating types for a loan
 export const getAvailableRatingTypes = (ratings: LoanRatings): RatingType[] => {
@@ -154,9 +156,9 @@ function calculateRevolverEAD(loan: Loan): number {
 }
 
 // Helper: Calculate monthly interest for revolvers
-function calculateRevolverMonthlyInterest(loan: Loan): number {
-  // Annual rate = margin + referenceRate
-  return loan.drawnAmount * ((loan.margin + loan.referenceRate) / 12);
+function calculateRevolverMonthlyInterest(loan: Loan, params: CalculationParameters): number {
+  // Annual rate = referenceRate + fundingIndexRate + margin + operationalCost + capitalCost
+  return loan.drawnAmount * (getTotalInterestRate(loan, params) / 12);
 }
 
 // Helper: Calculate annual commission for revolvers
@@ -195,7 +197,7 @@ export const calculateROE = (loan: Loan, params: CalculationParameters, preferre
                          (loan.startDate ? new Date(loan.startDate).getTime() : 0);
   const loanDurationYears = loanDurationMs / (365 * 24 * 60 * 60 * 1000);
   
-  const annualInterestIncome = (loan.margin + loan.referenceRate) * loan.drawnAmount;
+  const annualInterestIncome = getTotalInterestRate(loan, params) * loan.drawnAmount;
   const annualCommitmentFee = loan.fees.commitment * loan.undrawnAmount;
   const upfrontFeesAmortized = (loan.fees.upfront + loan.fees.agency + loan.fees.other) / 
                               Math.max(loanDurationYears, 1); // Éviter division par zéro
@@ -250,7 +252,7 @@ export const calculateRAROC = (loan: Loan, params: CalculationParameters, prefer
                          (loan.startDate ? new Date(loan.startDate).getTime() : 0);
   const loanDurationYears = loanDurationMs / (365 * 24 * 60 * 60 * 1000);
   
-  const annualInterestIncome = (loan.margin + loan.referenceRate) * loan.drawnAmount;
+  const annualInterestIncome = getTotalInterestRate(loan, params) * loan.drawnAmount;
   const annualCommitmentFee = loan.fees.commitment * loan.undrawnAmount;
   const upfrontFeesAmortized = (loan.fees.upfront + loan.fees.agency + loan.fees.other) / 
                               Math.max(loanDurationYears, 1);
@@ -273,13 +275,13 @@ export const calculateLoanMetrics = (loan: Loan, params: CalculationParameters, 
     const ead = calculateRevolverEAD(loan);
     const rwa = ead * getRatingMapping(loan, params, preferredRatingType).riskWeight;
     const expectedLoss = loan.pd * loan.lgd * ead;
-    const monthlyInterest = calculateRevolverMonthlyInterest(loan);
+    const monthlyInterest = calculateRevolverMonthlyInterest(loan, params);
     const annualCommission = calculateRevolverAnnualCommission(loan);
     const capitalConsumption = rwa * params.capitalRatio;
     // Compute ROE, RAROC, netMargin, effectiveYield for revolvers
     const loanDurationMs = (loan.endDate ? new Date(loan.endDate).getTime() : 0) - (loan.startDate ? new Date(loan.startDate).getTime() : 0);
     const loanDurationYears = loanDurationMs / (365 * 24 * 60 * 60 * 1000);
-    const annualInterestIncome = (loan.margin + loan.referenceRate) * loan.drawnAmount;
+    const annualInterestIncome = getTotalInterestRate(loan, params) * loan.drawnAmount;
     const annualCommitmentFee = loan.fees.commitment * loan.undrawnAmount;
     const upfrontFeesAmortized = (loan.fees.upfront + loan.fees.agency + loan.fees.other) / Math.max(loanDurationYears, 1);
     const annualIncome = annualInterestIncome + annualCommitmentFee + upfrontFeesAmortized;
@@ -290,9 +292,9 @@ export const calculateLoanMetrics = (loan: Loan, params: CalculationParameters, 
     const roe = capitalConsumption > 0 ? profitAfterTax / capitalConsumption : 0;
     const raroc = capitalConsumption > 0 ? profitBeforeTax / capitalConsumption : 0;
     const costOfRisk = expectedLoss / (loan.drawnAmount || 1);
-    const netMargin = loan.margin - (params.fundingCost + params.operationalCostRatio + costOfRisk);
+    const netMargin = getTotalInterestRate(loan, params) - (params.fundingCost + params.operationalCostRatio + costOfRisk);
     const feesPerYear = (loan.fees.upfront + loan.fees.agency + loan.fees.other) / Math.max(loanDurationYears, 1);
-    const effectiveYield = (loan.margin + loan.referenceRate) + (feesPerYear / (loan.drawnAmount || 1));
+    const effectiveYield = getTotalInterestRate(loan, params) + (feesPerYear / (loan.drawnAmount || 1));
     return {
       evaIntrinsic: (roe - params.targetROE) * capitalConsumption,
       evaSale: 0, // Not directly specified for revolvers
@@ -317,14 +319,14 @@ export const calculateLoanMetrics = (loan: Loan, params: CalculationParameters, 
   const evaSale = calculateEVASale(loan, params, preferredRatingType);
   const capitalConsumption = rwa * params.capitalRatio;
   const costOfRisk = expectedLoss / (loan.drawnAmount || 1); // Avoid division by zero
-  const netMargin = loan.margin - (params.fundingCost + params.operationalCostRatio + costOfRisk);
+  const netMargin = getTotalInterestRate(loan, params) - (params.fundingCost + params.operationalCostRatio + costOfRisk);
   // Calcul correct du yield effectif
   const loanDurationMs = (loan.endDate ? new Date(loan.endDate).getTime() : 0) - 
                          (loan.startDate ? new Date(loan.startDate).getTime() : 0);
   const loanDurationYears = loanDurationMs / (365 * 24 * 60 * 60 * 1000);
   const feesPerYear = (loan.fees.upfront + loan.fees.agency + loan.fees.other) / 
                      Math.max(loanDurationYears, 1);
-  const effectiveYield = (loan.margin + loan.referenceRate) + 
+  const effectiveYield = getTotalInterestRate(loan, params) + 
                          (feesPerYear / (loan.drawnAmount || 1));
   return {
     evaIntrinsic,
@@ -369,7 +371,7 @@ export const calculatePortfolioMetrics = (loans: Loan[], params: CalculationPara
                           (loan.startDate ? new Date(loan.startDate).getTime() : 0);
     const loanDurationYears = loanDurationMs / (365 * 24 * 60 * 60 * 1000);
     
-    const annualInterestIncome = (loan.margin + loan.referenceRate) * loan.drawnAmount;
+    const annualInterestIncome = getTotalInterestRate(loan, params) * loan.drawnAmount;
     const annualCommitmentFee = loan.fees.commitment * loan.undrawnAmount;
     const upfrontFeesAmortized = (loan.fees.upfront + loan.fees.agency + loan.fees.other) / 
                                 Math.max(loanDurationYears, 1);
@@ -476,4 +478,41 @@ export const simulateScenario = (
   }));
   
   return calculatePortfolioMetrics(modifiedLoans, params);
+};
+
+// Helper function to get current funding index rate for a loan
+export const getCurrentFundingIndexRate = (loan: Loan): number => {
+  const fundingIndexService = FundingIndexService.getInstance();
+  
+  // If loan has a specific funding index, use it
+  if (loan.fundingIndex) {
+    const indexData = fundingIndexService.getFundingIndexData(loan.fundingIndex);
+    if (indexData) {
+      return indexData.currentValue / 100; // Convert from percentage to decimal
+    }
+  }
+  
+  // Otherwise, get the default funding index for the loan's currency
+  const defaultIndexData = fundingIndexService.getFundingIndexDataWithFallback(loan.currency);
+  return defaultIndexData.currentValue / 100; // Convert from percentage to decimal
+};
+
+// Helper function to get the total interest rate for cashflow calculations
+export const getTotalInterestRate = (loan: Loan, params?: CalculationParameters): number => {
+  const fundingIndexRate = getCurrentFundingIndexRate(loan);
+  const baseRate = loan.referenceRate + fundingIndexRate + loan.margin;
+  
+  // If params are provided, include operational and capital costs
+  if (params) {
+    const operationalCost = params.operationalCostRatio;
+    
+    // Calculate capital cost dynamically based on loan's capital requirements
+    const rwa = calculateRWA(loan, params);
+    const capitalRequired = rwa * params.capitalRatio;
+    const capitalCost = (params.targetROE * capitalRequired) / (loan.drawnAmount || loan.originalAmount);
+    
+    return baseRate + operationalCost + capitalCost;
+  }
+  
+  return baseRate;
 };

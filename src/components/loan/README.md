@@ -8,7 +8,7 @@ The `YieldCurve` component provides a comprehensive visualization of how a loan'
 
 ### 1. Dynamic Yield Calculation
 - **Effective Yield**: Shows the total return considering all components
-- **Base Yield**: Interest rate + margin (the basic lending rate)
+- **Base Yield**: Reference rate + funding index rate + margin (the basic lending rate)
 - **Fee Component**: Impact of upfront fees amortized over time
 - **Risk Adjustment**: Expected losses based on PD × LGD
 
@@ -28,7 +28,7 @@ effectiveYield = baseYield + feeComponent + commitmentComponent - riskAdjustment
 ```
 
 Where:
-- `baseYield = margin + referenceRate`
+- `baseYield = referenceRate + fundingIndexRate + margin`
 - `feeComponent = upfrontFeesAnnualized / timeToMaturity`
 - `commitmentComponent = commitmentFeeYield × remainingUndrawnRatio`
 - `riskAdjustment = pd × lgd`
