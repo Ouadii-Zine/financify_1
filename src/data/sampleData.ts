@@ -10,6 +10,7 @@ export const defaultCalculationParameters: CalculationParameters = {
   operationalCostRatio: 0.01, // 1%
   currency: 'USD', // Default display currency (matches API base)
   exchangeRate: 1.0, // Default rate (USD to USD)
+  defaultFundingIndex: 'SOFR', // Default funding index for new loans
   pdCurve: [
     { rating: 'AAA', pd: 0.0001 },
     { rating: 'AA', pd: 0.0008 },
@@ -346,6 +347,7 @@ export const sampleLoans: Loan[] = [
     id: '3',
     name: 'Energy Infrastructure Project',
     clientName: 'GreenEnergy Corp',
+    portfolioId: 'default',
     type: 'term',
     status: 'active',
     startDate: '2023-03-10',
@@ -367,6 +369,12 @@ export const sampleLoans: Loan[] = [
     margin: 0.035,
     referenceRate: 0.015,
     internalRating: 'B',
+    ratings: {
+      internal: 'B',
+      sp: 'N/A',
+      moodys: 'N/A',
+      fitch: 'N/A'
+    },
     sector: 'Energy',
     country: 'Spain',
     cashFlows: [
@@ -416,6 +424,7 @@ export const sampleLoans: Loan[] = [
     id: '4',
     name: 'Real Estate Development Loan',
     clientName: 'PropDev SA',
+    portfolioId: 'default',
     type: 'bullet',
     status: 'active',
     startDate: '2022-12-05',
@@ -437,6 +446,12 @@ export const sampleLoans: Loan[] = [
     margin: 0.028,
     referenceRate: 0.015,
     internalRating: 'BBB',
+    ratings: {
+      internal: 'BBB',
+      sp: 'N/A',
+      moodys: 'N/A',
+      fitch: 'N/A'
+    },
     sector: 'Real Estate',
     country: 'France',
     cashFlows: [
@@ -479,6 +494,7 @@ export const sampleLoans: Loan[] = [
     id: '5',
     name: 'Healthcare Acquisition Facility',
     clientName: 'MediGroup AG',
+    portfolioId: 'default',
     type: 'term',
     status: 'active',
     startDate: '2023-06-15',
@@ -500,6 +516,12 @@ export const sampleLoans: Loan[] = [
     margin: 0.02,
     referenceRate: 0.015,
     internalRating: 'A',
+    ratings: {
+      internal: 'A',
+      sp: 'N/A',
+      moodys: 'N/A',
+      fitch: 'N/A'
+    },
     sector: 'Healthcare',
     country: 'Switzerland',
     cashFlows: [
@@ -553,6 +575,8 @@ export const samplePortfolio: Portfolio = {
   id: '1',
   name: 'Corporate Loan Portfolio',
   description: 'Portefeuille principal de crédits corporate',
+  createdDate: new Date().toISOString(),
+  lastModified: new Date().toISOString(),
   loans: sampleLoans,
   metrics: {
     totalExposure: 0,

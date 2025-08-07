@@ -10,6 +10,11 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Loan, LoanType, LoanStatus, Currency, ClientType, PortfolioSummary, SPRating, S_P_RATING_MAPPINGS, LoanRatings, InternalRating, MoodysRating, FitchRating, RatingType, FundingIndex } from '@/types/finance';
 import { convertToSPRating, getPDFromParameters } from '@/utils/financialCalculations';
 import LoanDataService from '@/services/LoanDataService';
+import { getRecommendedModel, getRecommendedGuaranteeParams, CollateralType, LGDModel, GuaranteeType } from '@/utils/lgdModels';
+import CollateralManager from '@/components/collateral/CollateralManager';
+import CollateralAnalytics from '@/components/collateral/CollateralAnalytics';
+import { CollateralPortfolio } from '@/types/finance';
+import CollateralService from '@/services/CollateralService';
 
 import PortfolioService, { PORTFOLIOS_UPDATED_EVENT } from '@/services/PortfolioService';
 import ClientTemplateService from '@/services/ClientTemplateService';
@@ -17,6 +22,7 @@ import ParameterService from '@/services/ParameterService';
 import { Switch } from '@/components/ui/switch';
 import CurrencyService from '@/services/CurrencyService';
 import FundingIndexService from '@/services/FundingIndexService';
+import { Shield } from 'lucide-react';
 
 interface LoanFormData {
   id?: string;
@@ -39,6 +45,27 @@ interface LoanFormData {
   sector: string;
   country: string;
   
+  // Enhanced LGD Configuration
+  lgdType: 'constant' | 'variable' | 'guaranteed' | 'collateralized';
+  lgdConstant?: string;
+  lgdVariable?: {
+    type: 'realEstate' | 'equipment' | 'vehicle' | 'cash' | 'other';
+    initialValue: string;
+    model: 'linear' | 'exponential' | 'logarithmic' | 'polynomial';
+    parameters: {
+      depreciationRate?: string;
+      appreciationRate?: string;
+      halfLife?: string;
+      polynomialCoefficients?: string;
+    };
+  };
+  lgdGuaranteed?: {
+    baseLGD: string;
+    guaranteeType: 'government' | 'corporate' | 'personal' | 'collateral' | 'other';
+    coverage: string;
+    guarantorLGD: string;
+  };
+  
   // Multi-rating system
   internalRating: string;
   spRating: string;
@@ -47,7 +74,7 @@ interface LoanFormData {
   
   margin: string;
   referenceRate: string;
-  fundingIndex?: string;
+  rateType: 'fixed' | 'variable';
   upfrontFee?: string;
   commitmentFee?: string;
   agencyFee?: string;
@@ -112,6 +139,13 @@ const LoanNew = () => {
     };
   }, []);
   
+  // Get default LGD for a sector
+  const getDefaultLGDForSector = (sector: string): number => {
+    const parameters = ParameterService.loadParameters();
+    const sectorLGD = parameters.lgdAssumptions.find(s => s.sector === sector);
+    return sectorLGD ? sectorLGD.lgd * 100 : 45; // Default to 45% if sector not found
+  };
+
   const defaultFormData: LoanFormData = {
     name: 'Test Loan',
     clientName: 'Test Client',
@@ -131,13 +165,29 @@ const LoanNew = () => {
     ead: '',
     sector: 'Technology',
     country: 'France',
+    lgdType: 'constant',
+    lgdConstant: getDefaultLGDForSector('Technology').toString(),
+    lgdVariable: {
+      type: 'equipment',
+      initialValue: '45',
+      model: 'exponential',
+      parameters: {
+        depreciationRate: '15'
+      }
+    },
+    lgdGuaranteed: {
+      baseLGD: '45',
+      guaranteeType: 'government',
+      coverage: '80',
+      guarantorLGD: '0'
+    },
     internalRating: 'BB+', // Will be updated to first available rating
     spRating: 'N/A',
     moodysRating: 'N/A',
     fitchRating: 'N/A',
     margin: '2',
     referenceRate: '3',
-    fundingIndex: 'EUR3M', // Will be updated based on currency
+    rateType: 'variable',
     upfrontFee: '0',
     commitmentFee: '0',
     agencyFee: '0',
@@ -157,6 +207,34 @@ const LoanNew = () => {
   const [formData, setFormData] = useState<LoanFormData>(defaultFormData);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [parametersVersion, setParametersVersion] = useState(0); // Force re-render when parameters change
+  const [collateralPortfolio, setCollateralPortfolio] = useState<CollateralPortfolio>({
+    id: '',
+    loanId: '',
+    totalValue: 0,
+    currency: 'EUR',
+    diversificationScore: 0,
+    concentrationRisk: 0,
+    items: [],
+    portfolioRiskMetrics: {
+      totalValueAtRisk: 0,
+      weightedAverageVolatility: 0,
+      correlationMatrix: [],
+      stressTestResults: [],
+      expectedShortfall: 0,
+      portfolioBeta: 0
+    },
+    regulatoryCompliance: {
+      baselCompliant: true,
+      lcrEligible: false,
+      hqlaCategory: 'ineligible',
+      haircutPercentage: 0.25,
+      regulatoryRatios: {
+        lcrRatio: 0,
+        nsfRatio: 0,
+        hqlaRatio: 0
+      }
+    }
+  });
   
   // Update form currency when currentCurrency changes
   useEffect(() => {
@@ -166,10 +244,7 @@ const LoanNew = () => {
         currency: currentCurrency
       };
       
-      // Set default funding index for the new currency
-      const fundingIndexService = FundingIndexService.getInstance();
-      const defaultIndex = fundingIndexService.getDefaultFundingIndexWithFallback(currentCurrency);
-      updatedData.fundingIndex = defaultIndex;
+      // No funding index handling needed in form
       
       return updatedData;
     });
@@ -243,36 +318,60 @@ const LoanNew = () => {
             endDate: loanToEdit.endDate,
             currency: loanToEdit.currency,
             originalAmount: loanToEdit.originalAmount.toString(),
-            outstandingAmount: loanToEdit.outstandingAmount.toString(),
-            drawnAmount: loanToEdit.drawnAmount.toString(),
-            undrawnAmount: loanToEdit.undrawnAmount.toString(),
+            outstandingAmount: loanToEdit.outstandingAmount?.toString() || '',
+            drawnAmount: loanToEdit.drawnAmount?.toString() || '',
+            undrawnAmount: loanToEdit.undrawnAmount?.toString() || '',
             pd: (loanToEdit.pd * 100).toString(),
             lgd: (loanToEdit.lgd * 100).toString(),
-            ead: loanToEdit.ead.toString(),
+            ead: loanToEdit.ead?.toString() || '',
             sector: loanToEdit.sector,
             country: loanToEdit.country,
+            lgdType: loanToEdit.lgdType || 'constant',
+            lgdConstant: loanToEdit.lgdConstant ? (loanToEdit.lgdConstant * 100).toString() : undefined,
+            lgdVariable: loanToEdit.lgdVariable ? {
+              type: loanToEdit.lgdVariable.type,
+              initialValue: (loanToEdit.lgdVariable.initialValue * 100).toString(),
+              model: loanToEdit.lgdVariable.model,
+              parameters: {
+                depreciationRate: loanToEdit.lgdVariable.parameters?.depreciationRate ? (loanToEdit.lgdVariable.parameters.depreciationRate * 100).toString() : undefined,
+                appreciationRate: loanToEdit.lgdVariable.parameters?.appreciationRate ? (loanToEdit.lgdVariable.parameters.appreciationRate * 100).toString() : undefined,
+                halfLife: loanToEdit.lgdVariable.parameters?.halfLife ? loanToEdit.lgdVariable.parameters.halfLife.toString() : undefined,
+                polynomialCoefficients: loanToEdit.lgdVariable.parameters?.polynomialCoefficients ? loanToEdit.lgdVariable.parameters.polynomialCoefficients.join(',') : undefined
+              }
+            } : undefined,
+            lgdGuaranteed: loanToEdit.lgdGuaranteed ? {
+              baseLGD: (loanToEdit.lgdGuaranteed.baseLGD * 100).toString(),
+              guaranteeType: loanToEdit.lgdGuaranteed.guaranteeType,
+              coverage: (loanToEdit.lgdGuaranteed.coverage * 100).toString(),
+              guarantorLGD: (loanToEdit.lgdGuaranteed.guarantorLGD * 100).toString()
+            } : undefined,
             internalRating: loanToEdit.ratings?.internal || loanToEdit.internalRating || 'BB+',
             spRating: loanToEdit.ratings?.sp || 'N/A',
             moodysRating: loanToEdit.ratings?.moodys || 'N/A',
             fitchRating: loanToEdit.ratings?.fitch || 'N/A',
             margin: (loanToEdit.margin * 100).toString(),
             referenceRate: (loanToEdit.referenceRate * 100).toString(),
-            fundingIndex: loanToEdit.fundingIndex || 'EUR3M',
-            upfrontFee: loanToEdit.fees.upfront.toString(),
-            commitmentFee: loanToEdit.fees.commitment.toString(),
-            agencyFee: loanToEdit.fees.agency.toString(),
-            otherFee: loanToEdit.fees.other.toString(),
+            rateType: loanToEdit.rateType || 'variable',
+            upfrontFee: loanToEdit.fees.upfront?.toString() || '0',
+            commitmentFee: loanToEdit.fees.commitment?.toString() || '0',
+            agencyFee: loanToEdit.fees.agency?.toString() || '0',
+            otherFee: loanToEdit.fees.other?.toString() || '0',
             // --- NOUVEAUX CHAMPS STRUCTURE CASHFLOW ---
             interestPaymentFrequency: loanToEdit.interestPaymentFrequency,
             principalRepaymentFrequency: loanToEdit.principalRepaymentFrequency,
             amortizationType: loanToEdit.amortizationType,
             interestCalculationMethod: loanToEdit.interestCalculationMethod,
-            gracePeriodMonths: loanToEdit.gracePeriodMonths.toString(),
-            allowPrepayment: loanToEdit.allowPrepayment,
-            allowPenalty: loanToEdit.allowPenalty,
-            revocableImmediately: loanToEdit.revocableImmediately
+            gracePeriodMonths: loanToEdit.gracePeriodMonths?.toString() || '0',
+            allowPrepayment: loanToEdit.allowPrepayment ?? false,
+            allowPenalty: loanToEdit.allowPenalty ?? false,
+            revocableImmediately: loanToEdit.revocableImmediately ?? false
             // ------------------------------------------------
           });
+
+          // Load collateral portfolio if it exists
+          if (loanToEdit.collateralPortfolio) {
+            setCollateralPortfolio(loanToEdit.collateralPortfolio);
+          }
         } else {
           toast({
             title: "Error",
@@ -295,18 +394,34 @@ const LoanNew = () => {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData(prev => {
+      const updatedData = { ...prev, [name]: value };
+      
+      // Sync lgdConstant with main lgd field
+      if (name === 'lgdConstant') {
+        updatedData.lgd = value;
+      }
+      
+      return updatedData;
+    });
   };
 
   const handleSelectChange = (name: string, value: string) => {
     setFormData(prev => {
       const updatedData = { ...prev, [name]: value };
       
-      // Auto-set default funding index when currency changes
+      // Currency change handled separately
       if (name === 'currency') {
-        const fundingIndexService = FundingIndexService.getInstance();
-        const defaultIndex = fundingIndexService.getDefaultFundingIndexWithFallback(value as Currency);
-        updatedData.fundingIndex = defaultIndex;
+        // No funding index handling needed in form
+      }
+      
+      // Update LGD when sector changes
+      if (name === 'sector') {
+        const defaultLGD = getDefaultLGDForSector(value);
+        updatedData.lgd = defaultLGD.toString();
+        if (updatedData.lgdType === 'constant') {
+          updatedData.lgdConstant = defaultLGD.toString();
+        }
       }
       
       return updatedData;
@@ -343,9 +458,56 @@ const LoanNew = () => {
     calculatePDFromRating();
   }, [selectedRatingType, formData.internalRating, formData.spRating, formData.moodysRating, formData.fitchRating]);
 
+
+
   const handleRatingChange = (ratingType: string, value: string) => {
     setFormData(prev => ({ ...prev, [ratingType]: value }));
   };
+
+  const handleLGDTypeChange = (lgdType: 'constant' | 'variable' | 'guaranteed' | 'collateralized') => {
+    setFormData(prev => {
+      const updatedData = { ...prev, lgdType };
+      
+      if (lgdType === 'constant') {
+        // Set constant LGD to current sector default
+        const defaultLGD = getDefaultLGDForSector(prev.sector);
+        updatedData.lgdConstant = defaultLGD.toString();
+        updatedData.lgd = defaultLGD.toString();
+      } else if (lgdType === 'variable') {
+        // Set variable LGD with recommended defaults
+        const recommended = getRecommendedModel('equipment');
+        updatedData.lgdVariable = {
+          type: 'equipment',
+          initialValue: '45',
+          model: recommended.model,
+          parameters: {
+            depreciationRate: '15'
+          }
+        };
+        updatedData.lgd = '45';
+      } else if (lgdType === 'guaranteed') {
+        // Set guaranteed LGD with recommended defaults
+        const recommended = getRecommendedGuaranteeParams('government');
+        updatedData.lgdGuaranteed = {
+          baseLGD: '45',
+          guaranteeType: 'government',
+          coverage: (recommended.coverage * 100).toString(),
+          guarantorLGD: (recommended.guarantorLGD * 100).toString()
+        };
+        // Calculate initial LGD using guarantee formula
+        const baseLGD = 0.45;
+        const finalLGD = baseLGD * (1 - recommended.coverage) + recommended.guarantorLGD * recommended.coverage;
+        updatedData.lgd = (finalLGD * 100).toString();
+      } else if (lgdType === 'collateralized') {
+        // Set collateralized LGD - will be calculated based on collateral portfolio
+        updatedData.lgd = '30'; // Lower base LGD due to collateral
+      }
+      
+      return updatedData;
+    });
+  };
+
+
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -416,8 +578,51 @@ const LoanNew = () => {
         drawnAmount: drawnAmount, // Use as entered
         undrawnAmount: undrawnAmount, // Use as entered or auto-calculated
         pd: parseFloat(formData.pd.toString()) / 100,
-        lgd: parseFloat(formData.lgd.toString()) / 100,
+        lgd: (() => {
+          // Calculate the appropriate LGD based on type
+          if (formData.lgdType === 'guaranteed' && formData.lgdGuaranteed) {
+            const baseLGD = parseFloat(formData.lgdGuaranteed.baseLGD.toString()) / 100;
+            const coverage = parseFloat(formData.lgdGuaranteed.coverage.toString()) / 100;
+            const guarantorLGD = parseFloat(formData.lgdGuaranteed.guarantorLGD.toString()) / 100;
+            return baseLGD * (1 - coverage) + guarantorLGD * coverage;
+          } else if (formData.lgdType === 'collateralized' && collateralPortfolio.items.length > 0) {
+            // Use the collateral service to calculate effective LGD
+            const collateralService = CollateralService.getInstance();
+            return collateralService.calculateEffectiveLGD(
+              parseFloat(formData.lgd.toString()) / 100,
+              collateralPortfolio,
+              parseFloat(formData.originalAmount.toString()),
+              0.25
+            );
+          } else if (formData.lgdType === 'constant' && formData.lgdConstant) {
+            return parseFloat(formData.lgdConstant.toString()) / 100;
+          } else if (formData.lgdType === 'variable' && formData.lgdVariable) {
+            return parseFloat(formData.lgdVariable.initialValue.toString()) / 100;
+          } else {
+            return parseFloat(formData.lgd.toString()) / 100;
+          }
+        })(),
         ead: parseFloat(formData.originalAmount.toString()),
+        // Enhanced LGD Configuration
+        lgdType: formData.lgdType,
+        lgdConstant: formData.lgdConstant ? parseFloat(formData.lgdConstant.toString()) / 100 : undefined,
+        lgdVariable: formData.lgdVariable ? {
+          type: formData.lgdVariable.type,
+          initialValue: parseFloat(formData.lgdVariable.initialValue?.toString() || '45') / 100,
+          model: formData.lgdVariable.model,
+          parameters: {
+            depreciationRate: formData.lgdVariable.parameters?.depreciationRate ? parseFloat(formData.lgdVariable.parameters.depreciationRate.toString()) / 100 : undefined,
+            appreciationRate: formData.lgdVariable.parameters?.appreciationRate ? parseFloat(formData.lgdVariable.parameters.appreciationRate.toString()) / 100 : undefined,
+            halfLife: formData.lgdVariable.parameters?.halfLife ? parseFloat(formData.lgdVariable.parameters.halfLife.toString()) : undefined,
+            polynomialCoefficients: formData.lgdVariable.parameters?.polynomialCoefficients ? formData.lgdVariable.parameters.polynomialCoefficients.split(',').map(c => parseFloat(c.trim())) : undefined
+          }
+        } : undefined,
+        lgdGuaranteed: formData.lgdGuaranteed ? {
+          baseLGD: parseFloat(formData.lgdGuaranteed.baseLGD.toString()) / 100,
+          guaranteeType: formData.lgdGuaranteed.guaranteeType,
+          coverage: parseFloat(formData.lgdGuaranteed.coverage.toString()) / 100,
+          guarantorLGD: parseFloat(formData.lgdGuaranteed.guarantorLGD.toString()) / 100
+        } : undefined,
         fees: {
           upfront: parseFloat(formData.upfrontFee?.toString() || '0'),
           commitment: parseFloat(formData.commitmentFee?.toString() || '0'),
@@ -425,8 +630,9 @@ const LoanNew = () => {
           other: parseFloat(formData.otherFee?.toString() || '0')
         },
         margin: parseFloat(formData.margin.toString()) / 100,
+        rateType: formData.rateType,
         referenceRate: parseFloat(formData.referenceRate.toString()) / 100,
-        fundingIndex: formData.fundingIndex as FundingIndex,
+        fundingIndex: ParameterService.loadParameters().defaultFundingIndex || 'SOFR',
         internalRating: formData.internalRating as SPRating, // Backward compatibility
         ratings: ratings, // New multi-rating system
         sector: formData.sector,
@@ -452,8 +658,50 @@ const LoanNew = () => {
         gracePeriodMonths: formData.gracePeriodMonths ? parseInt(formData.gracePeriodMonths) : 0,
         allowPrepayment: !!formData.allowPrepayment,
         allowPenalty: !!formData.allowPenalty,
-        revocableImmediately: formData.revocableImmediately || false
+        revocableImmediately: formData.revocableImmediately || false,
         // ------------------------------------------------
+        
+        // Enhanced Collateral Portfolio
+        collateralPortfolio: formData.lgdType === 'collateralized' ? {
+          ...collateralPortfolio,
+          id: `collateral-${loanId}`,
+          loanId: loanId,
+          currency: formData.currency
+        } : undefined,
+        
+        // Enhanced LGD Configuration with Collateral
+        enhancedLGDConfig: formData.lgdType === 'collateralized' ? {
+          type: 'collateralized',
+          collateralized: {
+            baseLGD: parseFloat(formData.lgd.toString()) / 100,
+            collateralPortfolio: {
+              ...collateralPortfolio,
+              id: `collateral-${loanId}`,
+              loanId: loanId,
+              currency: formData.currency
+            },
+            haircutPercentage: 0.25,
+            correlationAdjustment: 0.1
+          }
+        } : formData.lgdType === 'guaranteed' ? {
+          type: 'guaranteed',
+          guaranteed: {
+            baseLGD: parseFloat(formData.lgdGuaranteed?.baseLGD.toString() || '45') / 100,
+            guaranteeType: formData.lgdGuaranteed?.guaranteeType || 'government',
+            coverage: parseFloat(formData.lgdGuaranteed?.coverage.toString() || '80') / 100,
+            guarantorLGD: parseFloat(formData.lgdGuaranteed?.guarantorLGD.toString() || '0') / 100
+          }
+        } : formData.lgdType === 'variable' ? {
+          type: 'variable',
+          variable: {
+            baseLGD: parseFloat(formData.lgdVariable?.initialValue.toString() || '45') / 100,
+            collateralAdjustment: 0,
+            timeDecay: 0.05
+          }
+        } : formData.lgdType === 'constant' ? {
+          type: 'constant',
+          constant: parseFloat(formData.lgdConstant?.toString() || formData.lgd.toString()) / 100
+        } : undefined
       };
       
       if (isEditMode && formData.id) {
@@ -715,104 +963,25 @@ const LoanNew = () => {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="fundingIndex">Funding Index</Label>
+                <Label htmlFor="rateType">Rate Type</Label>
                 <Select
-                  value={formData.fundingIndex || ''}
-                  onValueChange={value => handleSelectChange('fundingIndex', value)}
+                  value={formData.rateType}
+                  onValueChange={value => handleSelectChange('rateType', value)}
                 >
-                  <SelectTrigger id="fundingIndex">
-                    <SelectValue placeholder="Select a funding index" />
+                  <SelectTrigger id="rateType">
+                    <SelectValue placeholder="Select rate type" />
                   </SelectTrigger>
                   <SelectContent>
-                    {(() => {
-                      const fundingIndexService = FundingIndexService.getInstance();
-                      const recommendedIndices = fundingIndexService.getAvailableFundingIndicesWithFallback(formData.currency as Currency);
-                      const allIndices = fundingIndexService.getAllFundingIndicesData();
-                      const defaultIndex = fundingIndexService.getDefaultFundingIndexWithFallback(formData.currency as Currency);
-                      const hasSpecificIndices = fundingIndexService.hasSpecificFundingIndices(formData.currency as Currency);
-                      
-                      return (
-                        <>
-                          {/* Recommended Indices Section */}
-                          <div className="px-2 py-1.5 text-sm font-semibold text-muted-foreground border-b">
-                            Recommended for {formData.currency}
-                          </div>
-                          {recommendedIndices.map(index => {
-                            const indexData = fundingIndexService.getFundingIndexData(index);
-                            const isFallback = !hasSpecificIndices && indexData;
-                            
-                            return (
-                              <SelectItem key={index} value={index}>
-                                <div className="flex items-center justify-between w-full">
-                                  <span>{indexData?.name || index}</span>
-                                  <div className="flex items-center gap-2 ml-2">
-                                    <Badge variant="secondary" className="text-xs">
-                                      {indexData?.currentValue.toFixed(2)}%
-                                    </Badge>
-                                    {index === defaultIndex && (
-                                      <Badge variant="outline" className="text-xs">
-                                        {hasSpecificIndices ? 'Default' : 'Fallback'}
-                                      </Badge>
-                                    )}
-                                    {isFallback && (
-                                      <Badge variant="destructive" className="text-xs">Fallback</Badge>
-                                    )}
-                                  </div>
-                                </div>
-                              </SelectItem>
-                            );
-                          })}
-                          
-                          {/* All Indices Section */}
-                          <div className="px-2 py-1.5 text-sm font-semibold text-muted-foreground border-b mt-2">
-                            All Available Indices
-                          </div>
-                          {allIndices
-                            .filter(indexData => !recommendedIndices.includes(indexData.code))
-                            .map(indexData => {
-                              const isRecommended = recommendedIndices.includes(indexData.code);
-                              
-                              return (
-                                <SelectItem key={indexData.code} value={indexData.code}>
-                                  <div className="flex items-center justify-between w-full">
-                                    <div className="flex items-center gap-2">
-                                      <span>{indexData.name}</span>
-                                      <Badge variant="outline" className="text-xs">
-                                        {indexData.currency}
-                                      </Badge>
-                                    </div>
-                                    <div className="flex items-center gap-2 ml-2">
-                                      <Badge variant="secondary" className="text-xs">
-                                        {indexData.currentValue.toFixed(2)}%
-                                      </Badge>
-                                    </div>
-                                  </div>
-                                </SelectItem>
-                              );
-                            })}
-                        </>
-                      );
-                    })()}
+                    <SelectItem value="fixed">Fixed Rate</SelectItem>
+                    <SelectItem value="variable">Variable Rate</SelectItem>
                   </SelectContent>
                 </Select>
-                {formData.fundingIndex && (() => {
-                  const fundingIndexService = FundingIndexService.getInstance();
-                  const indexData = fundingIndexService.getFundingIndexData(formData.fundingIndex as FundingIndex);
-                  const hasSpecificIndices = fundingIndexService.hasSpecificFundingIndices(formData.currency as Currency);
-                  
-                  if (indexData) {
-                    return (
-                      <p className="text-xs text-muted-foreground">
-                        Current rate: <strong>{indexData.currentValue.toFixed(2)}%</strong> - {indexData.description}
-                        {!hasSpecificIndices && (
-                          <span className="text-orange-600 font-medium"> (Using fallback index)</span>
-                        )}
-                      </p>
-                    );
-                  }
-                  return null;
-                })()}
+                <p className="text-xs text-muted-foreground">
+                  Fixed rate loans have a constant interest rate. Variable rate loans adjust based on market conditions.
+                </p>
               </div>
+              
+
               
               <div className="space-y-2">
                 <Label htmlFor="originalAmount">Original Amount *</Label>
@@ -988,7 +1157,7 @@ const LoanNew = () => {
               </p>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="pd">Probability of Default (%)</Label>
                 <Input 
@@ -1003,19 +1172,6 @@ const LoanNew = () => {
                 <p className="text-xs text-muted-foreground">
                   Auto-calculated from selected rating type
                 </p>
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="lgd">Loss Given Default (%)</Label>
-                <Input 
-                  id="lgd" 
-                  name="lgd" 
-                  type="number" 
-                  step="0.1" 
-                  value={formData.lgd} 
-                  onChange={handleInputChange} 
-                  placeholder="45.0" 
-                />
               </div>
               
               <div className="space-y-2">
@@ -1044,6 +1200,420 @@ const LoanNew = () => {
                 />
               </div>
             </div>
+            
+            {/* Unified LGD & Collateral Management */}
+            <div className="p-4 border rounded-lg bg-muted/50">
+              <h3 className="text-lg font-medium mb-4 flex items-center gap-2">
+                <Shield className="h-5 w-5" />
+                LGD & Collateral Management
+              </h3>
+              
+              {/* LGD Type Selection */}
+              <div className="mb-6">
+                <Label className="text-base font-medium">LGD Type</Label>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  <Button
+                    type="button"
+                    variant={formData.lgdType === 'constant' ? 'default' : 'outline'}
+                    onClick={() => handleLGDTypeChange('constant')}
+                  >
+                    Constant
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={formData.lgdType === 'variable' ? 'default' : 'outline'}
+                    onClick={() => handleLGDTypeChange('variable')}
+                  >
+                    Variable
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={formData.lgdType === 'guaranteed' ? 'default' : 'outline'}
+                    onClick={() => handleLGDTypeChange('guaranteed')}
+                  >
+                    Guaranteed
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={formData.lgdType === 'collateralized' ? 'default' : 'outline'}
+                    onClick={() => handleLGDTypeChange('collateralized')}
+                  >
+                    Collateralized
+                  </Button>
+                </div>
+              </div>
+
+              {/* LGD Configuration Based on Type */}
+              <div className="space-y-6">
+                {/* Current LGD Display */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="lgd">Current LGD (%)</Label>
+                    <Input 
+                      id="lgd" 
+                      name="lgd" 
+                      type="number" 
+                      step="0.1" 
+                      value={formData.lgd} 
+                      onChange={handleInputChange} 
+                      placeholder="45.0" 
+                      disabled={formData.lgdType === 'variable'}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {formData.lgdType === 'constant' ? 'Direct LGD value' : 'Calculated from model'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Constant LGD Configuration */}
+                {formData.lgdType === 'constant' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="lgdConstant">Constant LGD Value (%)</Label>
+                    <Input 
+                      id="lgdConstant" 
+                      name="lgdConstant" 
+                      type="number" 
+                      step="0.1" 
+                      value={formData.lgdConstant} 
+                      onChange={handleInputChange} 
+                      placeholder="45.0" 
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Default: {getDefaultLGDForSector(formData.sector)}% (based on {formData.sector} sector)
+                    </p>
+                  </div>
+                )}
+
+                {/* Variable LGD Configuration */}
+                {formData.lgdType === 'variable' && (
+                  <div className="space-y-4 p-4 border rounded-lg bg-blue-50 dark:bg-blue-950/20">
+                    <h4 className="font-medium">Variable LGD Configuration</h4>
+                    <p className="text-sm text-muted-foreground">
+                      Configure variable LGD based on collateral value changes over time.
+                    </p>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Collateral Type</Label>
+                        <Select 
+                          value={formData.lgdVariable?.type || 'equipment'} 
+                          onValueChange={(value: CollateralType) => {
+                            const recommended = getRecommendedModel(value);
+                            setFormData(prev => ({
+                              ...prev,
+                              lgdVariable: {
+                                ...prev.lgdVariable!,
+                                type: value,
+                                model: recommended.model,
+                                parameters: {
+                                  depreciationRate: recommended.parameters.depreciationRate?.toString() || '',
+                                  appreciationRate: recommended.parameters.appreciationRate?.toString() || '',
+                                  halfLife: recommended.parameters.halfLife?.toString() || '',
+                                  polynomialCoefficients: recommended.parameters.polynomialCoefficients?.join(',') || ''
+                                }
+                              }
+                            }));
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select collateral type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="realEstate">Real Estate</SelectItem>
+                            <SelectItem value="equipment">Equipment</SelectItem>
+                            <SelectItem value="vehicle">Vehicle</SelectItem>
+                            <SelectItem value="cash">Cash</SelectItem>
+                            <SelectItem value="other">Other</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label>Mathematical Model</Label>
+                        <Select 
+                          value={formData.lgdVariable?.model || 'exponential'} 
+                          onValueChange={(value: LGDModel) => {
+                            setFormData(prev => ({
+                              ...prev,
+                              lgdVariable: {
+                                ...prev.lgdVariable!,
+                                model: value
+                              }
+                            }));
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select model" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="linear">Linear</SelectItem>
+                            <SelectItem value="exponential">Exponential</SelectItem>
+                            <SelectItem value="logarithmic">Logarithmic</SelectItem>
+                            <SelectItem value="polynomial">Polynomial</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="initialValue">Initial LGD Value (%)</Label>
+                        <Input 
+                          id="initialValue" 
+                          name="lgdVariable.initialValue" 
+                          type="number" 
+                          step="0.1" 
+                          value={formData.lgdVariable?.initialValue || '45'} 
+                          onChange={(e) => setFormData(prev => ({
+                            ...prev,
+                            lgdVariable: {
+                              ...prev.lgdVariable || {
+                                type: 'equipment',
+                                model: 'exponential',
+                                parameters: {}
+                              },
+                              initialValue: e.target.value
+                            }
+                          }))} 
+                          placeholder="45.0" 
+                        />
+                      </div>
+                      
+                      {formData.lgdVariable?.type === 'realEstate' && (
+                        <div className="space-y-2">
+                          <Label htmlFor="appreciationRate">Annual Appreciation Rate (%)</Label>
+                          <Input 
+                            id="appreciationRate" 
+                            name="lgdVariable.parameters.appreciationRate" 
+                            type="number" 
+                            step="0.1" 
+                            value={formData.lgdVariable?.parameters?.appreciationRate || '3'} 
+                            onChange={(e) => setFormData(prev => ({
+                              ...prev,
+                              lgdVariable: {
+                                ...prev.lgdVariable || {
+                                  type: 'realEstate',
+                                  initialValue: '45',
+                                  model: 'exponential',
+                                  parameters: {}
+                                },
+                                parameters: {
+                                  ...prev.lgdVariable?.parameters || {},
+                                  appreciationRate: e.target.value
+                                }
+                              }
+                            }))} 
+                            placeholder="3.0" 
+                          />
+                        </div>
+                      )}
+                      
+                      {(formData.lgdVariable?.type === 'equipment' || formData.lgdVariable?.type === 'vehicle') && (
+                        <div className="space-y-2">
+                          <Label htmlFor="depreciationRate">Annual Depreciation Rate (%)</Label>
+                          <Input 
+                            id="depreciationRate" 
+                            name="lgdVariable.parameters.depreciationRate" 
+                            type="number" 
+                            step="0.1" 
+                            value={formData.lgdVariable?.parameters?.depreciationRate || '15'} 
+                            onChange={(e) => setFormData(prev => ({
+                              ...prev,
+                              lgdVariable: {
+                                ...prev.lgdVariable || {
+                                  type: 'equipment',
+                                  initialValue: '45',
+                                  model: 'exponential',
+                                  parameters: {}
+                                },
+                                parameters: {
+                                  ...prev.lgdVariable?.parameters || {},
+                                  depreciationRate: e.target.value
+                                }
+                              }
+                            }))} 
+                            placeholder="15.0" 
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Guaranteed LGD Configuration */}
+                {formData.lgdType === 'guaranteed' && (
+                  <div className="space-y-4 p-4 border rounded-lg bg-green-50 dark:bg-green-950/20">
+                    <h4 className="font-medium">Guaranteed LGD Configuration</h4>
+                    <p className="text-sm text-muted-foreground">
+                      Configure guaranteed LGD using the formula: LGD_final = LGD_unsecured × (1 - Coverage) + LGD_guarantor × Coverage
+                    </p>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="baseLGD">Base LGD (Unsecured) (%)</Label>
+                        <Input 
+                          id="baseLGD" 
+                          name="lgdGuaranteed.baseLGD" 
+                          type="number" 
+                          step="0.1" 
+                          value={formData.lgdGuaranteed?.baseLGD || '45'} 
+                          onChange={(e) => setFormData(prev => ({
+                            ...prev,
+                            lgdGuaranteed: {
+                              ...prev.lgdGuaranteed || {
+                                baseLGD: '45',
+                                guaranteeType: 'government',
+                                coverage: '80',
+                                guarantorLGD: '0'
+                              },
+                              baseLGD: e.target.value
+                            }
+                          }))} 
+                          placeholder="45.0" 
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          LGD without any guarantee protection
+                        </p>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label>Guarantee Type</Label>
+                        <Select 
+                          value={formData.lgdGuaranteed?.guaranteeType || 'government'} 
+                          onValueChange={(value: GuaranteeType) => {
+                            const recommended = getRecommendedGuaranteeParams(value);
+                            setFormData(prev => ({
+                              ...prev,
+                              lgdGuaranteed: {
+                                ...prev.lgdGuaranteed || {
+                                  baseLGD: '45',
+                                  guaranteeType: 'government',
+                                  coverage: '80',
+                                  guarantorLGD: '0'
+                                },
+                                guaranteeType: value,
+                                coverage: (recommended.coverage * 100).toString(),
+                                guarantorLGD: (recommended.guarantorLGD * 100).toString()
+                              }
+                            }));
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select guarantee type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="government">Government Guarantee</SelectItem>
+                            <SelectItem value="corporate">Corporate Guarantee</SelectItem>
+                            <SelectItem value="personal">Personal Guarantee</SelectItem>
+                            <SelectItem value="collateral">Collateral Guarantee</SelectItem>
+                            <SelectItem value="other">Other Guarantee</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="coverage">Coverage (%)</Label>
+                        <Input 
+                          id="coverage" 
+                          name="lgdGuaranteed.coverage" 
+                          type="number" 
+                          step="0.1" 
+                          value={formData.lgdGuaranteed?.coverage || '80'} 
+                          onChange={(e) => setFormData(prev => ({
+                            ...prev,
+                            lgdGuaranteed: {
+                              ...prev.lgdGuaranteed || {
+                                baseLGD: '45',
+                                guaranteeType: 'government',
+                                coverage: '80',
+                                guarantorLGD: '0'
+                              },
+                              coverage: e.target.value
+                            }
+                          }))} 
+                          placeholder="80.0" 
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Percentage of exposure covered by guarantee
+                        </p>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="guarantorLGD">Guarantor LGD (%)</Label>
+                        <Input 
+                          id="guarantorLGD" 
+                          name="lgdGuaranteed.guarantorLGD" 
+                          type="number" 
+                          step="0.1" 
+                          value={formData.lgdGuaranteed?.guarantorLGD || '0'} 
+                          onChange={(e) => setFormData(prev => ({
+                            ...prev,
+                            lgdGuaranteed: {
+                              ...prev.lgdGuaranteed || {
+                                baseLGD: '45',
+                                guaranteeType: 'government',
+                                coverage: '80',
+                                guarantorLGD: '0'
+                              },
+                              guarantorLGD: e.target.value
+                            }
+                          }))} 
+                          placeholder="0.0" 
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          LGD of the guarantor (0% for government, higher for others)
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                      <p className="text-sm">
+                        <strong>Guarantee Formula:</strong> LGD_final = {formData.lgdGuaranteed?.baseLGD || '45'}% × (1 - {formData.lgdGuaranteed?.coverage || '80'}%) + {formData.lgdGuaranteed?.guarantorLGD || '0'}% × {formData.lgdGuaranteed?.coverage || '80'}% = {
+                          formData.lgdGuaranteed ? 
+                            (() => {
+                              const baseLGD = parseFloat(formData.lgdGuaranteed.baseLGD) / 100;
+                              const coverage = parseFloat(formData.lgdGuaranteed.coverage) / 100;
+                              const guarantorLGD = parseFloat(formData.lgdGuaranteed.guarantorLGD) / 100;
+                              const result = baseLGD * (1 - coverage) + guarantorLGD * coverage;
+                              return (result * 100).toFixed(1) + '%';
+                            })()
+                          : '0.0%'
+                        }
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Collateralized LGD Configuration */}
+                {formData.lgdType === 'collateralized' && (
+                  <div className="space-y-6">
+                    <div className="p-4 border rounded-lg bg-purple-50 dark:bg-purple-950/20">
+                      <h4 className="font-medium mb-2">Collateralized LGD Configuration</h4>
+                      <p className="text-sm text-muted-foreground">
+                        LGD is calculated based on the collateral portfolio below. The effective LGD will be automatically computed considering collateral value, haircuts, and correlation adjustments.
+                      </p>
+                    </div>
+
+                    {/* Collateral Manager */}
+                    <CollateralManager
+                      portfolio={collateralPortfolio}
+                      onPortfolioChange={setCollateralPortfolio}
+                      currency={formData.currency}
+                    />
+
+                    {/* Collateral Analytics */}
+                    {collateralPortfolio.items.length > 0 && (
+                      <CollateralAnalytics
+                        portfolio={collateralPortfolio}
+                        currency={formData.currency}
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
           </CardContent>
         </Card>
         
@@ -1066,15 +1636,16 @@ const LoanNew = () => {
                     <SelectValue placeholder="Select a sector" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="Banking">Banking</SelectItem>
                     <SelectItem value="Technology">Technology</SelectItem>
-                    <SelectItem value="Healthcare">Healthcare</SelectItem>
-                    <SelectItem value="Financial Services">Financial Services</SelectItem>
-                    <SelectItem value="Energy">Energy</SelectItem>
-                    <SelectItem value="Manufacturing">Manufacturing</SelectItem>
                     <SelectItem value="Retail">Retail</SelectItem>
+                    <SelectItem value="Manufacturing">Manufacturing</SelectItem>
+                    <SelectItem value="Energy">Energy</SelectItem>
+                    <SelectItem value="Healthcare">Healthcare</SelectItem>
                     <SelectItem value="Real Estate">Real Estate</SelectItem>
-                    <SelectItem value="Transportation">Transportation</SelectItem>
-                    <SelectItem value="Telecommunications">Telecommunications</SelectItem>
+                    <SelectItem value="Telecom">Telecommunications</SelectItem>
+                    <SelectItem value="Automotive">Automotive</SelectItem>
+                    <SelectItem value="Agriculture">Agriculture</SelectItem>
                     <SelectItem value="Other">Other</SelectItem>
                   </SelectContent>
                 </Select>
@@ -1286,6 +1857,8 @@ const LoanNew = () => {
             </div>
           </CardContent>
         </Card>
+
+
 
         <div className="flex items-center gap-4 mt-6">
           <Button type="submit" disabled={isSubmitting}>

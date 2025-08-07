@@ -387,7 +387,10 @@ class FundingIndexService {
     }
   };
 
-  private constructor() {}
+  private constructor() {
+    // Load saved funding indices from localStorage
+    this.loadFundingIndicesFromStorage();
+  }
 
   public static getInstance(): FundingIndexService {
     if (!FundingIndexService.instance) {
@@ -538,12 +541,45 @@ class FundingIndexService {
   }
 
   /**
-   * Update funding index value (for future real-time updates)
+   * Update funding index value and persist to localStorage
    */
   public updateFundingIndexValue(index: FundingIndex, newValue: number): void {
     if (this.fundingIndicesData[index]) {
       this.fundingIndicesData[index].currentValue = newValue;
       this.fundingIndicesData[index].lastUpdated = new Date().toISOString();
+      
+      // Persist to localStorage
+      this.saveFundingIndicesToStorage();
+    }
+  }
+
+  /**
+   * Save funding indices data to localStorage
+   */
+  private saveFundingIndicesToStorage(): void {
+    try {
+      localStorage.setItem('financify-funding-indices', JSON.stringify(this.fundingIndicesData));
+    } catch (error) {
+      console.error('Failed to save funding indices to localStorage:', error);
+    }
+  }
+
+  /**
+   * Load funding indices data from localStorage
+   */
+  private loadFundingIndicesFromStorage(): void {
+    try {
+      const stored = localStorage.getItem('financify-funding-indices');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        // Merge with default values to ensure all indices exist
+        this.fundingIndicesData = {
+          ...this.fundingIndicesData,
+          ...parsed
+        };
+      }
+    } catch (error) {
+      console.error('Failed to load funding indices from localStorage:', error);
     }
   }
 
@@ -568,6 +604,55 @@ class FundingIndexService {
     });
     
     return grouped;
+  }
+
+  /**
+   * Reset all funding indices to their original hardcoded values
+   */
+  public resetToDefaults(): void {
+    // Original hardcoded values
+    const originalValues: Record<FundingIndex, number> = {
+      EUR3M: 3.85,
+      ESTR: 3.75,
+      SOFR: 5.33,
+      LIB3M: 5.45,
+      SONIA: 5.25,
+      SARON: 1.65,
+      TONAR: 0.05,
+      TIBOR: 0.08,
+      AUB3M: 4.35,
+      BBSW: 4.40,
+      BA: 4.75,
+      CORRA: 4.70,
+      CIB3M: 3.45,
+      OIB3M: 4.15,
+      STIBOR: 3.85,
+      WIB3M: 5.75,
+      BUBOR: 6.25,
+      PRIBOR: 5.95,
+      SIBOR: 3.45,
+      SHIBOR: 2.15,
+      MIBOR: 6.75,
+      KIBOR: 7.25,
+      BIBOR: 4.85,
+      KLIBOR: 3.25,
+      BRLIBOR: 13.75,
+      MXNIBOR: 11.25,
+      KRWIBOR: 3.55,
+      JIBAR: 8.45,
+      MADIBOR: 3.15
+    };
+
+    // Reset each index to its original value
+    Object.entries(originalValues).forEach(([indexCode, originalValue]) => {
+      if (this.fundingIndicesData[indexCode as FundingIndex]) {
+        this.fundingIndicesData[indexCode as FundingIndex].currentValue = originalValue;
+        this.fundingIndicesData[indexCode as FundingIndex].lastUpdated = new Date().toISOString();
+      }
+    });
+
+    // Save to localStorage
+    this.saveFundingIndicesToStorage();
   }
 }
 

@@ -28,11 +28,13 @@ import {
 } from '@/components/ui/collapsible';
 import { toast } from '@/hooks/use-toast';
 import { defaultCalculationParameters } from '@/data/sampleData';
-import { RatingType, InternalRating, SPRating, MoodysRating, FitchRating, CalculationParameters, TransitionMatrix } from '@/types/finance';
+import { RatingType, InternalRating, SPRating, MoodysRating, FitchRating, CalculationParameters, TransitionMatrix, FundingIndex } from '@/types/finance';
 import { PlusCircle, Save, Trash2, Download, Upload, RotateCcw, Info, ChevronDown, ChevronRight } from 'lucide-react';
 import ParameterService from '@/services/ParameterService';
 import LoanDataService from '@/services/LoanDataService';
 import CurrencyService, { ExchangeRate } from '@/services/CurrencyService';
+import FundingIndexService from '@/services/FundingIndexService';
+import { Badge } from '@/components/ui/badge';
 
 // Liste des pays extraite du fichier Excel "Country of Operation" - traduite en anglais
 const COUNTRIES = [
@@ -341,6 +343,49 @@ const Parameters = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [totalLoans, setTotalLoans] = useState(0);
   
+  // State for funding indices management
+  const [fundingIndexRates, setFundingIndexRates] = useState<Record<FundingIndex, number>>({} as Record<FundingIndex, number>);
+  const [isSavingIndices, setIsSavingIndices] = useState(false);
+  const [isResettingIndices, setIsResettingIndices] = useState(false);
+  const [fundingIndicesVersion, setFundingIndicesVersion] = useState(0); // Force re-render when indices change
+  const [selectedFundingIndex, setSelectedFundingIndex] = useState<FundingIndex | ''>('');
+  const [newRateValue, setNewRateValue] = useState<number>(0);
+  
+  // Computed property for selected index info
+  const selectedIndexInfo = selectedFundingIndex ? FundingIndexService.getInstance().getFundingIndexData(selectedFundingIndex) : null;
+  
+  // Handler for updating selected rate
+  const handleUpdateSelectedRate = () => {
+    if (selectedFundingIndex && newRateValue !== selectedIndexInfo?.currentValue) {
+      // Immediately update the service
+      const fundingIndexService = FundingIndexService.getInstance();
+      fundingIndexService.updateFundingIndexValue(selectedFundingIndex, newRateValue);
+      
+      // Clear from local changes since it's now saved
+      setFundingIndexRates(prev => {
+        const updated = { ...prev };
+        delete updated[selectedFundingIndex];
+        return updated;
+      });
+      
+      // Force re-render to show updated values
+      setFundingIndicesVersion(prev => prev + 1);
+      
+      toast({
+        title: "Rate Updated",
+        description: `${selectedIndexInfo?.name} rate updated to ${newRateValue.toFixed(2)}%`,
+        variant: "default"
+      });
+    }
+  };
+
+  // Update newRateValue when selectedFundingIndex changes
+  useEffect(() => {
+    if (selectedFundingIndex && selectedIndexInfo) {
+      setNewRateValue(selectedIndexInfo.currentValue);
+    }
+  }, [selectedFundingIndex, selectedIndexInfo]);
+  
   // State for collapsible sections
   const [isPDSectionOpen, setIsPDSectionOpen] = useState(false);
   const [isTransitionMatrixOpen, setIsTransitionMatrixOpen] = useState(true);
@@ -583,6 +628,99 @@ const Parameters = () => {
     input.click();
   };
 
+  // Funding indices management handlers
+  const handleFundingIndexRateChange = (indexCode: FundingIndex, newValue: number) => {
+    setFundingIndexRates(prev => ({
+      ...prev,
+      [indexCode]: newValue
+    }));
+  };
+
+  const handleSaveFundingIndices = async () => {
+    setIsSavingIndices(true);
+    
+    try {
+      const fundingIndexService = FundingIndexService.getInstance();
+      
+      // Update all remaining changed rates in the service
+      Object.entries(fundingIndexRates).forEach(([indexCode, newValue]) => {
+        fundingIndexService.updateFundingIndexValue(indexCode as FundingIndex, newValue);
+      });
+      
+      // Clear the local state since changes are now saved
+      setFundingIndexRates({} as Record<FundingIndex, number>);
+      
+      // Update the new rate value if an index is selected
+      if (selectedFundingIndex) {
+        const updatedIndexInfo = fundingIndexService.getFundingIndexData(selectedFundingIndex);
+        if (updatedIndexInfo) {
+          setNewRateValue(updatedIndexInfo.currentValue);
+        }
+      }
+      
+      // Force re-render to show updated values
+      setFundingIndicesVersion(prev => prev + 1);
+      
+      const changeCount = Object.keys(fundingIndexRates).length;
+      toast({
+        title: "Funding Indices Updated",
+        description: changeCount > 0 
+          ? `${changeCount} funding index rate(s) have been saved successfully.`
+          : "All changes have been saved.",
+        variant: "default"
+      });
+    } catch (error) {
+      console.error('Error saving funding indices:', error);
+      toast({
+        title: "Save Failed",
+        description: "Failed to save funding index rates. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSavingIndices(false);
+    }
+  };
+
+  const handleResetFundingIndices = async () => {
+    setIsResettingIndices(true);
+    
+    try {
+      const fundingIndexService = FundingIndexService.getInstance();
+      
+      // Use the service's reset method
+      fundingIndexService.resetToDefaults();
+      
+      // Clear any local changes
+      setFundingIndexRates({} as Record<FundingIndex, number>);
+      
+      // Update the new rate value if an index is selected
+      if (selectedFundingIndex) {
+        const updatedIndexInfo = fundingIndexService.getFundingIndexData(selectedFundingIndex);
+        if (updatedIndexInfo) {
+          setNewRateValue(updatedIndexInfo.currentValue);
+        }
+      }
+      
+      // Force re-render to show updated values
+      setFundingIndicesVersion(prev => prev + 1);
+      
+      toast({
+        title: "Funding Indices Reset",
+        description: "All funding index rates have been reset to default values.",
+        variant: "default"
+      });
+    } catch (error) {
+      console.error('Error resetting funding indices:', error);
+      toast({
+        title: "Reset Failed",
+        description: "Failed to reset funding index rates. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsResettingIndices(false);
+    }
+  };
+
 
   
   return (
@@ -757,6 +895,169 @@ const Parameters = () => {
                   </p>
                 </div>
               </div>
+              
+              {/* Funding Indices Management */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Funding Indices Setup</CardTitle>
+                  <CardDescription>
+                    Select a funding index and modify its rate. Changes are applied immediately.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                      {/* Funding Index Selection */}
+                      <div className="space-y-2">
+                        <Label htmlFor="selectedFundingIndex">Funding Index</Label>
+                        <Select
+                          value={selectedFundingIndex}
+                          onValueChange={(value) => setSelectedFundingIndex(value as FundingIndex)}
+                        >
+                          <SelectTrigger id="selectedFundingIndex">
+                            <SelectValue placeholder="Select a funding index" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(() => {
+                              const fundingIndexService = FundingIndexService.getInstance();
+                              const allIndices = fundingIndexService.getAllFundingIndicesData();
+                              
+                              return allIndices.map(indexData => (
+                                <SelectItem key={`${indexData.code}-${fundingIndicesVersion}`} value={indexData.code}>
+                                  <div className="flex items-center justify-between w-full">
+                                    <div className="flex items-center gap-2">
+                                      <span>{indexData.name}</span>
+                                      <Badge variant="outline" className="text-xs">
+                                        {indexData.currency}
+                                      </Badge>
+                                    </div>
+                                    <div className="flex items-center gap-2 ml-2">
+                                      <Badge variant="secondary" className="text-xs">
+                                        {indexData.currentValue.toFixed(2)}%
+                                      </Badge>
+                                    </div>
+                                  </div>
+                                </SelectItem>
+                              ));
+                            })()}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      
+                      {/* Currency */}
+                      <div className="space-y-2">
+                        <Label>Currency</Label>
+                        <div className="flex h-10 w-full rounded-md border border-input bg-muted px-3 py-2 text-sm items-center">
+                          {selectedIndexInfo?.currency || "-"}
+                        </div>
+                      </div>
+                      
+                      {/* Description */}
+                      <div className="space-y-2 md:col-span-2">
+                        <Label>Description</Label>
+                        <div className="flex h-10 w-full rounded-md border border-input bg-muted px-3 py-2 text-sm items-center">
+                          <span className="truncate" title={selectedIndexInfo?.description}>
+                            {selectedIndexInfo?.description || "-"}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      {/* Current Rate */}
+                      <div className="space-y-2">
+                        <Label>Current Rate</Label>
+                        <div className="flex h-10 w-full rounded-md border border-input bg-muted px-3 py-2 text-sm items-center">
+                          {selectedIndexInfo?.currentValue ? `${selectedIndexInfo.currentValue.toFixed(2)}%` : "-"}
+                        </div>
+                      </div>
+                      
+                      {/* Rate Input */}
+                      <div className="space-y-2">
+                        <Label>New Rate (%)</Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            max="100"
+                            value={newRateValue}
+                            onChange={(e) => setNewRateValue(parseFloat(e.target.value) || 0)}
+                            className="text-right font-mono"
+                            placeholder="0.00"
+                            disabled={!selectedFundingIndex}
+                          />
+                          <Button 
+                            onClick={handleUpdateSelectedRate}
+                            disabled={!selectedFundingIndex || newRateValue === selectedIndexInfo?.currentValue}
+                            size="sm"
+                          >
+                            Update
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex gap-2 pt-4">
+                      <Button 
+                        onClick={handleSaveFundingIndices}
+                        disabled={isSavingIndices || Object.keys(fundingIndexRates).length === 0}
+                        size="sm"
+                      >
+                        {isSavingIndices ? (
+                          <>
+                            <Save className="h-4 w-4 mr-2 animate-spin" />
+                            Saving...
+                          </>
+                        ) : (
+                          <>
+                            <Save className="h-4 w-4 mr-2" />
+                            Save Remaining Changes
+                          </>
+                        )}
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        onClick={handleResetFundingIndices}
+                        disabled={isResettingIndices}
+                        size="sm"
+                      >
+                        {isResettingIndices ? (
+                          <>
+                            <RotateCcw className="h-4 w-4 mr-2 animate-spin" />
+                            Resetting...
+                          </>
+                        ) : (
+                          <>
+                            <RotateCcw className="h-4 w-4 mr-2" />
+                            Reset All
+                          </>
+                        )}
+                      </Button>
+                      {Object.keys(fundingIndexRates).length > 0 && (
+                        <Button 
+                          variant="ghost" 
+                          onClick={() => setFundingIndexRates({} as Record<FundingIndex, number>)}
+                          size="sm"
+                        >
+                          Clear Changes
+                        </Button>
+                      )}
+                    </div>
+
+                    {/* Summary */}
+                    {Object.keys(fundingIndexRates).length > 0 && (
+                      <div className="flex items-center justify-between p-3 border rounded-lg bg-blue-50/50 border-blue-200">
+                        <div className="flex items-center gap-2">
+                          <Info className="h-4 w-4 text-blue-600" />
+                          <span className="text-sm font-medium text-blue-900">
+                            {Object.keys(fundingIndexRates).length} rate(s) modified
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
               
               {/* Rating System PD Configuration */}
               <div className="space-y-4">

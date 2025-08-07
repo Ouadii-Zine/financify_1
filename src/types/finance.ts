@@ -168,6 +168,7 @@ export interface Loan {
   };
   margin: number; // Spread over reference rate (%)
   referenceRate: number; // Base rate (%)
+  rateType: 'fixed' | 'variable'; // Fixed or variable rate loan
   fundingIndex?: FundingIndex; // Funding index for the loan
 
   // --- NOUVEAUX PARAMÈTRES STRUCTURE CASHFLOW ---
@@ -180,6 +181,33 @@ export interface Loan {
   allowPenalty?: boolean;
   revocableImmediately?: boolean;
   // ------------------------------------------------
+
+  // Enhanced LGD Configuration
+  lgdType?: 'constant' | 'variable' | 'guaranteed' | 'collateralized';
+  lgdConstant?: number;
+  lgdVariable?: {
+    type: 'realEstate' | 'equipment' | 'vehicle' | 'cash' | 'other';
+    initialValue: number;
+    model: 'linear' | 'exponential' | 'logarithmic' | 'polynomial';
+    parameters: {
+      depreciationRate?: number; // Annual depreciation rate (for equipment, vehicles)
+      appreciationRate?: number; // Annual appreciation rate (for real estate)
+      halfLife?: number; // Half-life for exponential decay
+      polynomialCoefficients?: number[]; // For polynomial models
+    };
+  };
+  lgdGuaranteed?: {
+    baseLGD: number; // LGD without guarantee (e.g., 45%)
+    guaranteeType: 'government' | 'corporate' | 'personal' | 'collateral' | 'other';
+    coverage: number; // Coverage percentage (e.g., 60% = 0.6)
+    guarantorLGD: number; // LGD of the guarantor (e.g., 0% for government, 20% for corporate)
+  };
+  
+  // Enhanced Collateral Portfolio
+  collateralPortfolio?: CollateralPortfolio;
+  
+  // Enhanced LGD Configuration with Collateral
+  enhancedLGDConfig?: EnhancedLGDConfig;
 
   // Multi-rating support
   ratings: LoanRatings;
@@ -279,6 +307,7 @@ export interface CalculationParameters {
   spread?: number; // Spread par défaut
   currency?: Currency; // Selected display currency
   exchangeRate?: number; // Exchange rate from EUR to selected currency
+  defaultFundingIndex?: FundingIndex; // Default funding index for new loans
   
   // Legacy PD curve (for backward compatibility)
   pdCurve: { rating: string; pd: number }[];
@@ -320,4 +349,196 @@ export interface SimulationResult {
       roe: number;
     };
   }[];
+}
+
+// Enhanced Collateral Types and Interfaces
+export type CollateralCategory = 
+  | 'realEstate' 
+  | 'equipment' 
+  | 'vehicle' 
+  | 'cash' 
+  | 'securities' 
+  | 'inventory' 
+  | 'receivables' 
+  | 'intellectualProperty' 
+  | 'commodities' 
+  | 'other';
+
+export type CollateralValuationMethod = 
+  | 'marketValue' 
+  | 'appraisedValue' 
+  | 'bookValue' 
+  | 'liquidationValue' 
+  | 'replacementCost' 
+  | 'incomeApproach' 
+  | 'costApproach' 
+  | 'comparableSales';
+
+export type CollateralRiskLevel = 'low' | 'medium' | 'high' | 'veryHigh';
+
+export interface CollateralItem {
+  id: string;
+  name: string;
+  category: CollateralCategory;
+  description?: string;
+  
+  // Valuation Information
+  valuationMethod: CollateralValuationMethod;
+  currentValue: number;
+  currency: Currency;
+  valuationDate: string;
+  nextValuationDate?: string;
+  
+  // Risk Assessment
+  riskLevel: CollateralRiskLevel;
+  volatility: number; // Annual volatility percentage
+  correlationWithLoan: number; // Correlation with loan performance (-1 to 1)
+  
+  // Collateral Specific Properties
+  properties: {
+    // Real Estate
+    propertyType?: 'residential' | 'commercial' | 'industrial' | 'land' | 'mixed';
+    location?: string;
+    squareMeters?: number;
+    constructionYear?: number;
+    propertyCondition?: 'excellent' | 'good' | 'fair' | 'poor';
+    
+    // Equipment/Vehicles
+    manufacturer?: string;
+    model?: string;
+    yearOfManufacture?: number;
+    equipmentCondition?: 'new' | 'excellent' | 'good' | 'fair' | 'poor';
+    maintenanceHistory?: string;
+    
+    // Securities
+    securityType?: 'equity' | 'bond' | 'fund' | 'derivative' | 'other';
+    issuer?: string;
+    maturityDate?: string;
+    couponRate?: number;
+    creditRating?: string;
+    
+    // Inventory
+    inventoryType?: 'rawMaterials' | 'workInProgress' | 'finishedGoods' | 'spareParts';
+    quantity?: number;
+    unitCost?: number;
+    obsolescenceRisk?: number;
+    
+    // Receivables
+    debtorType?: 'corporate' | 'individual' | 'government';
+    averagePaymentTerm?: number;
+    defaultRate?: number;
+    
+    // Other properties
+    [key: string]: any;
+  };
+  
+  // Valuation Model Parameters
+  valuationModel: {
+    type: 'linear' | 'exponential' | 'logarithmic' | 'polynomial' | 'custom';
+    parameters: {
+      depreciationRate?: number;
+      appreciationRate?: number;
+      halfLife?: number;
+      polynomialCoefficients?: number[];
+      customFormula?: string;
+    };
+  };
+  
+  // Legal and Regulatory
+  legalStatus: 'registered' | 'pending' | 'unregistered';
+  encumbranceLevel: number; // 0-1, percentage of collateral encumbered
+  priorityRank: number; // 1 = first priority, 2 = second priority, etc.
+  
+  // Insurance and Protection
+  insured: boolean;
+  insuranceValue?: number;
+  insuranceExpiryDate?: string;
+  
+  // Monitoring and Maintenance
+  monitoringFrequency: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annually';
+  lastInspectionDate?: string;
+  nextInspectionDate?: string;
+  
+  // Liquidation Information
+  estimatedLiquidationValue: number;
+  estimatedLiquidationTime: number; // in months
+  liquidationCosts: number;
+  
+  // Historical Data
+  historicalValues: Array<{
+    date: string;
+    value: number;
+    method: CollateralValuationMethod;
+  }>;
+  
+  // Risk Metrics
+  riskMetrics: {
+    valueAtRisk: number;
+    expectedShortfall: number;
+    stressTestScenarios: Array<{
+      scenario: string;
+      impactOnValue: number;
+    }>;
+  };
+}
+
+export interface CollateralPortfolio {
+  id: string;
+  loanId: string;
+  totalValue: number;
+  currency: Currency;
+  diversificationScore: number; // 0-1, higher is better
+  concentrationRisk: number; // 0-1, higher is riskier
+  items: CollateralItem[];
+  
+  // Portfolio Level Risk Metrics
+  portfolioRiskMetrics: {
+    totalValueAtRisk: number;
+    weightedAverageVolatility: number;
+    correlationMatrix: number[][];
+    stressTestResults: Array<{
+      scenario: string;
+      portfolioValue: number;
+      lossAmount: number;
+      impactPercentage: number;
+    }>;
+    expectedShortfall: number;
+    portfolioBeta: number;
+  };
+  
+  // Regulatory Compliance
+  regulatoryCompliance: {
+    baselCompliant: boolean;
+    lcrEligible: boolean;
+    hqlaCategory?: 'level1' | 'level2a' | 'level2b' | 'ineligible';
+    haircutPercentage: number;
+    regulatoryRatios: {
+      lcrRatio: number;
+      nsfRatio: number;
+      hqlaRatio: number;
+    };
+  };
+}
+
+// Enhanced LGD Configuration with Collateral
+export interface EnhancedLGDConfig {
+  type: 'constant' | 'variable' | 'guaranteed' | 'collateralized';
+  constant?: number;
+  variable?: {
+    baseLGD: number;
+    collateralAdjustment: number;
+    timeDecay: number;
+  };
+  guaranteed?: {
+    baseLGD: number;
+    guaranteeType: 'government' | 'corporate' | 'personal' | 'collateral' | 'other';
+    coverage: number;
+    guarantorLGD: number;
+  };
+  collateralized?: {
+    baseLGD: number;
+    collateralPortfolio: CollateralPortfolio;
+    haircutPercentage: number;
+    correlationAdjustment: number;
+  };
 }

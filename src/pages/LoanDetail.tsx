@@ -49,6 +49,7 @@ import LoanDataService from '../services/LoanDataService';
 import ClientTemplateService from '../services/ClientTemplateService';
 import { toast } from '@/hooks/use-toast';
 import YieldCurve from '../components/loan/YieldCurve';
+import LGDCurve from '../components/loan/LGDCurve';
 import ParameterService from '@/services/ParameterService';
 import { formatCurrency as formatCurrencyUtil, convertCurrency, convertBetweenCurrencies } from '@/utils/currencyUtils';
 import CurrencyService from '@/services/CurrencyService';
@@ -515,6 +516,7 @@ const LoanDetail = () => {
           <TabsTrigger className="flex-1 text-center" value="details">Details</TabsTrigger>
           <TabsTrigger className="flex-1 text-center" value="cashflows-auto">Cash Flows</TabsTrigger>
           <TabsTrigger className="flex-1 text-center" value="yieldcurve">Yield Curve</TabsTrigger>
+          <TabsTrigger className="flex-1 text-center" value="lgdcurve">LGD Curve</TabsTrigger>
           <TabsTrigger className="flex-1 text-center" value="metrics">Metrics</TabsTrigger>
           <TabsTrigger className="flex-1 text-center" value="simulations">Simulations</TabsTrigger>
         </TabsList>
@@ -847,6 +849,10 @@ const LoanDetail = () => {
               <YieldCurve loan={displayLoan} />
             </CardContent>
           </Card>
+        </TabsContent>
+        
+        <TabsContent value="lgdcurve" className="space-y-6">
+          <LGDCurve loan={displayLoan} />
         </TabsContent>
         
         <TabsContent value="metrics" className="space-y-6">

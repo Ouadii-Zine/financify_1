@@ -1,6 +1,7 @@
 // ExcelTemplateService.ts
 import { toast } from "@/hooks/use-toast";
 import { Loan, Portfolio, CalculationParameters } from "../types/finance";
+import { calculateEffectiveLGD } from "../utils/lgdModels";
 
 // CSV/Excel templates for import
 const LOAN_TEMPLATE_CONTENT = `ID,Name,Client,Type,Status,Start Date,End Date,Currency,Original Amount,Outstanding,Drawn Amount,Undrawn Amount,PD,LGD,EAD,Margin,Reference Rate,Internal Rating,Sector,Country,Upfront Fees,Commitment Fees,Agency Fees,Other Fees
@@ -76,7 +77,11 @@ const REPORT_TYPES: ReportType[] = [
       
       content += 'Loan Details:\n';
       portfolio.loans.forEach(loan => {
-        content += `${loan.name}, PD: ${(loan.pd * 100).toFixed(2)}%, LGD: ${(loan.lgd * 100).toFixed(0)}%, EL: ${loan.metrics?.expectedLoss || 0}\n`;
+        // Get the effective LGD (variable or constant)
+        const effectiveLGD = loan.lgdType === 'variable' && loan.lgdVariable 
+          ? calculateEffectiveLGD(loan)
+          : loan.lgd;
+        content += `${loan.name}, PD: ${(loan.pd * 100).toFixed(2)}%, LGD: ${(effectiveLGD * 100).toFixed(0)}%, EL: ${loan.metrics?.expectedLoss || 0}\n`;
       });
       
       return content;

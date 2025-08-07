@@ -141,15 +141,58 @@ export class DataValidationService {
       });
     }
     
-    if (loan.lgd < 0 || loan.lgd > 1) {
-      errors.push({
-        type: 'critical',
-        field: 'lgd',
-        message: 'Loss Given Default must be between 0 and 1',
-        value: loan.lgd,
-        suggestedValue: Math.max(0, Math.min(1, loan.lgd)),
-        loanId: loan.id
-      });
+    // Validate LGD based on type
+    if (loan.lgdType === 'variable' && loan.lgdVariable) {
+      // Validate variable LGD initial value
+      if (loan.lgdVariable.initialValue < 0 || loan.lgdVariable.initialValue > 1) {
+        errors.push({
+          type: 'critical',
+          field: 'lgdVariable.initialValue',
+          message: 'Variable LGD initial value must be between 0 and 1',
+          value: loan.lgdVariable.initialValue,
+          suggestedValue: Math.max(0, Math.min(1, loan.lgdVariable.initialValue)),
+          loanId: loan.id
+        });
+      }
+      
+      // Validate parameters based on model type
+      if (loan.lgdVariable.parameters) {
+        if (loan.lgdVariable.parameters.depreciationRate && 
+            (loan.lgdVariable.parameters.depreciationRate < 0 || loan.lgdVariable.parameters.depreciationRate > 1)) {
+          errors.push({
+            type: 'critical',
+            field: 'lgdVariable.parameters.depreciationRate',
+            message: 'Depreciation rate must be between 0 and 1',
+            value: loan.lgdVariable.parameters.depreciationRate,
+            suggestedValue: Math.max(0, Math.min(1, loan.lgdVariable.parameters.depreciationRate)),
+            loanId: loan.id
+          });
+        }
+        
+        if (loan.lgdVariable.parameters.appreciationRate && 
+            (loan.lgdVariable.parameters.appreciationRate < 0 || loan.lgdVariable.parameters.appreciationRate > 1)) {
+          errors.push({
+            type: 'critical',
+            field: 'lgdVariable.parameters.appreciationRate',
+            message: 'Appreciation rate must be between 0 and 1',
+            value: loan.lgdVariable.parameters.appreciationRate,
+            suggestedValue: Math.max(0, Math.min(1, loan.lgdVariable.parameters.appreciationRate)),
+            loanId: loan.id
+          });
+        }
+      }
+    } else {
+      // Validate constant LGD
+      if (loan.lgd < 0 || loan.lgd > 1) {
+        errors.push({
+          type: 'critical',
+          field: 'lgd',
+          message: 'Loss Given Default must be between 0 and 1',
+          value: loan.lgd,
+          suggestedValue: Math.max(0, Math.min(1, loan.lgd)),
+          loanId: loan.id
+        });
+      }
     }
     
     return errors;

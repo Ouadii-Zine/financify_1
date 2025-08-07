@@ -14,6 +14,7 @@ import {
   FundingIndex
 } from '../types/finance';
 import FundingIndexService from '../services/FundingIndexService';
+import { calculateEffectiveLGD } from './lgdModels';
 
 // Helper function to get available rating types for a loan
 export const getAvailableRatingTypes = (ratings: LoanRatings): RatingType[] => {
@@ -168,12 +169,17 @@ function calculateRevolverAnnualCommission(loan: Loan): number {
 
 // Patch: calculateExpectedLoss
 export const calculateExpectedLoss = (loan: Loan): number => {
+  // Use variable LGD if available, otherwise use constant LGD
+  const effectiveLGD = loan.lgdType === 'variable' && loan.lgdVariable 
+    ? calculateEffectiveLGD(loan)
+    : loan.lgd;
+    
   if (loan.type === 'revolver') {
     // Use EAD for revolver
     const ead = calculateRevolverEAD(loan);
-    return loan.pd * loan.lgd * ead;
+    return loan.pd * effectiveLGD * ead;
   }
-  return loan.pd * loan.lgd * loan.ead;
+  return loan.pd * effectiveLGD * loan.ead;
 };
 
 // Patch: calculateRWA
@@ -274,7 +280,7 @@ export const calculateLoanMetrics = (loan: Loan, params: CalculationParameters, 
   if (loan.type === 'revolver') {
     const ead = calculateRevolverEAD(loan);
     const rwa = ead * getRatingMapping(loan, params, preferredRatingType).riskWeight;
-    const expectedLoss = loan.pd * loan.lgd * ead;
+    const expectedLoss = calculateExpectedLoss(loan);
     const monthlyInterest = calculateRevolverMonthlyInterest(loan, params);
     const annualCommission = calculateRevolverAnnualCommission(loan);
     const capitalConsumption = rwa * params.capitalRatio;
@@ -357,7 +363,12 @@ export const calculatePortfolioMetrics = (loans: Loan[], params: CalculationPara
     : 0;
     
   const weightedAverageLGD = totalExposure > 0 
-    ? validLoans.reduce((sum, loan) => sum + (loan.lgd * loan.originalAmount), 0) / totalExposure 
+    ? validLoans.reduce((sum, loan) => {
+        const effectiveLGD = loan.lgdType === 'variable' && loan.lgdVariable 
+          ? calculateEffectiveLGD(loan)
+          : loan.lgd;
+        return sum + (effectiveLGD * loan.originalAmount);
+      }, 0) / totalExposure 
     : 0;
   
   const totalExpectedLoss = validLoans.reduce((sum, loan) => sum + calculateExpectedLoss(loan), 0);
@@ -469,13 +480,35 @@ export const simulateScenario = (
   spreadShift: number = 0
 ): PortfolioMetrics => {
   // Copie profonde des prêts pour appliquer les changements sans modifier les originaux
-  const modifiedLoans = loans.map(loan => ({
-    ...loan,
-    pd: loan.pd * pdMultiplier,
-    lgd: loan.lgd * lgdMultiplier,
-    margin: loan.margin + spreadShift,
-    referenceRate: loan.referenceRate + rateShift
-  }));
+  const modifiedLoans = loans.map(loan => {
+    const modifiedLoan = {
+      ...loan,
+      pd: loan.pd * pdMultiplier,
+      margin: loan.margin + spreadShift,
+      referenceRate: loan.referenceRate + rateShift
+    };
+    
+    // Handle LGD multiplier differently for variable vs constant LGD
+    if (loan.lgdType === 'variable' && loan.lgdVariable) {
+      // For variable LGD, apply multiplier to the initial value and parameters
+      modifiedLoan.lgdVariable = {
+        ...loan.lgdVariable,
+        initialValue: loan.lgdVariable.initialValue * lgdMultiplier,
+        parameters: {
+          ...loan.lgdVariable.parameters,
+          depreciationRate: loan.lgdVariable.parameters.depreciationRate ? 
+            loan.lgdVariable.parameters.depreciationRate * lgdMultiplier : undefined,
+          appreciationRate: loan.lgdVariable.parameters.appreciationRate ? 
+            loan.lgdVariable.parameters.appreciationRate * lgdMultiplier : undefined
+        }
+      };
+    } else {
+      // For constant LGD, apply multiplier directly
+      modifiedLoan.lgd = loan.lgd * lgdMultiplier;
+    }
+    
+    return modifiedLoan;
+  });
   
   return calculatePortfolioMetrics(modifiedLoans, params);
 };
